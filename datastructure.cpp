@@ -10,6 +10,7 @@ void Group::initAva() {
 			}
 		}
 	}
+	avanum = ava.size();
 }
 
 Mesh Group::getMesh(std::vector<Piece> & piecesref) {

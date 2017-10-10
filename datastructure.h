@@ -41,6 +41,10 @@ public:
 class TouchInfo{
 public:
 	TouchInfo() {}
+	TouchInfo(int e, Vector3 dir) {
+		this->e = e;
+		this->dir = dir;
+	}
 	TouchInfo(int e, Vector3 va, Vector3 vb, Vector3 dir, int knifeid) {
 		this->e = e;
 		this->va = va;
@@ -50,6 +54,18 @@ public:
 	}
 	int e, knifeid;
 	Vector3 va, vb, dir;
+	bool operator < (const TouchInfo& tar) const
+	{
+		return e < tar.e;
+	}
+	bool operator == (const TouchInfo& tar) const
+	{
+		return e == tar.e;
+	}
+	bool operator > (const TouchInfo& tar) const
+	{
+		return e > tar.e;
+	}
 };
 
 class Hash {
@@ -149,6 +165,40 @@ public:
 		this->hash = hash.hash;
 		hashlen = hash.hashlen;
 	}
+	Hash operator|(const Hash& tar) {
+		Hash newhash = *this;
+		for (int i = 0; i < hash.size(); i++) {
+			newhash.hash[i] = newhash.hash[i] | hash[i];
+		}
+		return newhash;
+	}
+	Hash operator&(const Hash& tar) {
+		Hash newhash = *this;
+		for (int i = 0; i < hash.size(); i++) {
+			newhash.hash[i] = newhash.hash[i] & hash[i];
+		}
+		return newhash;
+	}
+	Hash operator^(const Hash& tar) {
+		Hash newhash = *this;
+		for (int i = 0; i < hash.size(); i++) {
+			newhash.hash[i] = newhash.hash[i] ^ hash[i];
+		}
+		return newhash;
+	}
+	int activeNum() {
+		int cnt = 0;
+		int lasthashlen = hashlen;
+		for (int i = 0; i < hash.size(); i++, lasthashlen -= partlen)
+		{
+			unsigned int hashiter = hash[i];
+			int curhashlen = lasthashlen < partlen ? lasthashlen : partlen;
+			for (int j = 0; j < curhashlen; j++, hashiter /= 2) {
+				if (hashiter % 2 == 0x1)cnt++;
+			}
+		}
+		return cnt;
+	}
 	/*
 	Hash() {
 	hashlen = 0;
@@ -206,6 +256,7 @@ public:
 	//std::vector<Piece> pieces;
 	std::vector<int> pieces;
 	std::vector<Vector3> ava;
+	std::vector<Vector3> bound;
 	int avanum=0;
 	const float plus = 15.0f;
 	int id;
@@ -255,6 +306,63 @@ public:
 	bool collide(Vector3 center, float size) {
 		return collide(center, size, *(new bool));
 	}
+	float distance(Vector3 center) {
+		Vector3 vec = (p2 - p1);
+		float ll = vec.dot(vec);
+		float dot = vec.normalize().dot(center - p1);//normalize
+		float distance = 0;
+		if (dot < 0) {
+			Vector3 d = (center - p1);
+			distance = d.length();
+		}
+		else if (dot*dot < ll) {
+			Vector3 d = (center - p1);
+			float h = vec.dot(d);
+			distance = (d - h * vec).length();
+		}
+		else {
+			Vector3 d = (center - p2);
+			distance = d.length();
+		}
+		return distance > r ? distance - r : 0;
+	}
+	float distanceToSk(Vector3 center) {
+		Vector3 vec = (p2 - p1);
+		float ll = vec.dot(vec);
+		float dot = vec.normalize().dot(center - p1);//normalize
+		float distance = 0;
+		if (dot < 0) {
+			Vector3 d = (center - p1);
+			distance = d.length();
+		}
+		else if (dot*dot < ll) {
+			Vector3 d = (center - p1);
+			float h = vec.dot(d);
+			distance = (d - h * vec).length();
+		}
+		else {
+			Vector3 d = (center - p2);
+			distance = d.length();
+		}
+		return distance;
+	}
+	Vector3 proj(Vector3 center) {
+		Vector3 vec = (p2 - p1);
+		float ll = vec.dot(vec);
+		float dot = vec.normalize().dot(center - p1);//normalize
+		float distance = 0;
+		if (dot < 0) {
+			return p1;
+		}
+		else if (dot*dot < ll) {
+			Vector3 d = (center - p1);
+			float h = vec.dot(d);
+			return h*vec + p1;
+		}
+		else {
+			return p2;
+		}
+	}
 	bool between(Vector3 center) {
 		Vector3 vec = (p2 - p1);
 		float ll = vec.dot(vec);
@@ -262,7 +370,43 @@ public:
 		return dot>=0 && dot * dot <= ll;
 
 	}
+};
 
+class Tag {
+public:
+	Tag() {}
+	Tag(int e, int side, int disthre){
+		this->e = e;
+		this->side = side;
+		this->disthre = disthre;
+	}
+	int e;
+	bool side;
+	int disthre;
+	bool operator < (const Tag& tar) const
+	{
+		if (e == tar.e) {
+			if (side == tar.side) {
+				return disthre < tar.disthre;
+			}
+			return !side;
+		}
+		return e < tar.e;
+	}
+	bool operator == (const Tag& tar) const
+	{
+		return e == tar.e && side == tar.side && disthre == tar.disthre;
+	}
+	bool operator > (const Tag& tar) const
+	{
+		if (e == tar.e) {
+			if (side == tar.side) {
+				return disthre > tar.disthre;
+			}
+			return side;
+		}
+		return e > tar.e;
+	}
 };
 
 class Voxel {
@@ -275,12 +419,16 @@ public:
 	}
 	Hash hash;
 	Hash hash2;
+	Tag tag;
 	Vector3 linkval;
+	float dis;
 	Vector3 pos;
 	int i, ix, iy, iz;
 	int belong;
-	bool exist = true;
+	bool exist = false;
+	bool removed = false;
 	bool immo = false;
+	
 	std::set<int> touchid;
 	void setXYZ(int ix, int iy, int iz) {
 		this->ix = ix;
@@ -293,4 +441,5 @@ public:
 		iz = this->iz;
 	}
 }; 
+
 #endif // DATASTRUCTURE_H

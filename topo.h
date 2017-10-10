@@ -71,19 +71,24 @@ public:
 	std::vector<std::set<int>> verticeedge;
 	std::vector<bool> isimpo;
 	std::vector<float> angles;
+	std::vector<Capsule> caps;
 	int optMode = 0;
 	const float radii = 5.0f;
 	int verticenum;
 	int edgenum;
 	int lesstype = 0;
 	void genKnife();
+	void genAllKnife();
+	void genCapsule();
 	std::vector<Plane> genKnife(std::vector<Vector3> splitNorm, std::vector<int>& knifeIdx);
 	void read();
 	Vector3 getEdgeCent(int idx) { return (vertices[edges[idx].ia] + vertices[edges[idx].ib]) / 2; }
+	Vector3 getEdgeVec(int idx) { return (vertices[edges[idx].ib] - vertices[edges[idx].ia]).normalize(); }
 	void prepareData();
 	float calAngleArgVal(std::vector<float> angles);
 	void calTouch(Piece & piece);
 	void purneAva(Group &group, Piece &piece);
+	void boundAva(Group &group, std::vector<Vector3>);
 	std::vector<float> genRandomAngles();
 	std::vector<float> genRandomAngles(float from, float to, float lev);
 	void outputRotateArg();
@@ -95,6 +100,7 @@ public:
 	void atomOpt();
 	Vector3 calNorm(int i, float angle);
 	float calCrossVal(int i, Vector3 norm, float disthre);
+	std::vector<Vector3> calTouchBound(std::set<TouchInfo> &tis);
 };
 
 #endif // TOPO_H

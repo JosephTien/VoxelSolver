@@ -22,22 +22,50 @@ int main(int argc, char *argv[]) {
 			//utility.topo.beeOpt();
 			utility.topo.outputRotateArg();
 		}
+		else if (strcmp(argv[1], "field") == 0) {
+			utility.topo.read();
+			utility.calBound();
+			utility.topo.genAllKnife();
+			utility.topo.genCapsule();
+			//**********************
+			utility.genPiece_voxel();
+			utility.initGroup();
+			utility.initLink_voxel();
+			utility.optimize();
+			utility.iterate();
+			//**********************
+			//utility.collectLast();
+			utility.genVoxelOutput();
+			utility.outputGroup_voxel();
+			utility.outputKnife();
+			std::cout << "Done" << std::endl;
+		}
+		else if (strcmp(argv[1], "dirsearch") == 0) {
+			utility.topo.read();
+			utility.calBound();
+			utility.topo.genAllKnife();
+			utility.topo.genCapsule();
+			utility.genPiece_voxel();
+			utility.initGroup();
+			utility.initLink_voxel();
+			utility.optimize();
+			utility.collectLast();
+			utility.genVoxelOutput();
+			utility.outputGroup_voxel();
+			std::cout << "Done" << std::endl;
+		}
 		else if (strcmp(argv[1], "bfs") == 0) {
 			utility.topo.read();
 			utility.calBound();
+			utility.topo.genAllKnife();
+			utility.topo.genCapsule();
 			utility.genVoxelSeen();
-			//utility.voxelDirSeen();
 			utility.voxelBfsSeen();
-			
-			/*
-			utility.genVoxel();
-			utility.voxelDirSearch(3);
-			utility.voxelDirSearch(-3);
-			*/
 			/*
 			utility.genVoxel();
 			utility.voxelBfs();
 			*/
+			utility.collectLast();
 			utility.genVoxelOutput();
 			utility.outputPiece_voxel();
 			utility.outputKnife();
@@ -56,6 +84,8 @@ int main(int argc, char *argv[]) {
 			std::cout << "Link Initialized!" << std::endl;
 			utility.optimize();
 			std::cout << "Optimized!" << std::endl;
+			utility.collectLast();
+			utility.genVoxelOutput();
 			utility.outputGroup_voxel();
 		}
 		else {

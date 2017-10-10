@@ -35,6 +35,7 @@ public:
 	std::vector<Voxel> voxels;
 	std::vector<Piece> pieces;
 	std::vector<Group> groups;
+	std::vector<int> groups_final;
 	std::priority_queue<GroupLink> groupLink;
 	std::vector<int> groupIdxMap;//std::map<int, int> groupIdxMap;
 	std::vector<bool> idexist;
@@ -42,43 +43,64 @@ public:
 	int groupidcnt = 0;
 	Vector3 ld, ru;
 	const float l = 2.0f;
+	float far = 100.0f;// 10.0f;
+	clock_t t1, t2;
+	//*************************
+	void tic() {
+		t1 = clock();
+	}
+	void toc() {
+		t2 = clock(); printf("%lf sec\n", (t2 - t1) / (double)(CLOCKS_PER_SEC)); t1 = clock();
+	}
+	//*************************
 	void genRandomTest(int k);
-    void genPieceGroupMesh(std::string filename);
-	void calBound();
-	void genVoxel();
-	void genVoxelSeen();
-	void calVoxelSeen(int state);
-	void voxelDirSeen();
-	void voxelDirSeen(int state);
-	void voxelBfsSeen();
-	bool voxelBfsSeenOnce(std::set<int> & last, int cmpbit);
-	void voxelCollectSeen(int state);
-	void genVoxelMesh(int p, int state);
-	void genVoxelByKnife();
-	void genPiece_voxel();
-	void genPiece();
 	void genPiece(std::string filename);
 	void genPiece(std::string filename, bool output);
+	void genPieceGroupMesh(std::string filename);
+	//*************************
+	void calBound();
+	void genPiece();
+	void genPiece_voxel();
 	void appendPiece(Group& group, Piece& piece);
 	void MergeGroup(Group& group1, Group& group2);
 	void initGroup();
+	void calTouch(int p);
 	void initLink();
 	void initLink_voxel();
+	float calWorth(Group& group1, Group& group2);
+	std::vector<int> calContact(Group & group, std::set<int> ids);
+	int calContact(Group & group1, Group & group2);
 	void optimize();
-	int voxelId(int i, int j, int k, int state);
-	void voxelDirSearch(int state);
-	void voxelBfsOnce(int p, std::vector<int>& queue, int& flag, std::set<int>& touchedge, int state);
+	void iterate();
+	//*************************
+	int voxelId(int i, int j, int k, int mode);
+	void genPiece_voxel_bfs();
+	void genVoxelByKnife();
+	void genVoxel();
+	void genVoxelSeen();
+	void calVoxelSeen(int mode);
+	void voxelDirSeen();
+	void voxelDirSeen(int mode);
+	void voxelDirSearch(int mode);
 	bool voxelBfs(int p, std::set<int>& vs);
 	void voxelBfs(int p);
 	void voxelBfs();
-	void outputMesh(char str[50], Mesh mesh);
-	void outputPiece();
+	void voxelBfsOnce(int p, std::vector<int>& queue, int& flag, std::set<int>& touchedge, int mode);
+	void voxelBfsSeen();
+	bool voxelBfsSeenOnce(std::set<int> & last, int cmpbit);
+	//*************************
+	void voxelCollectSeen(int mode);
+	void genVoxelMesh(int p, int mode);
 	void genVoxelOutput();
+	void collectLast();
+	//*************************
+	void outputPiece();
 	void outputPiece_voxel();
 	void outputGroup();
 	void outputGroup_voxel();
+	void outputMesh(char * str, Mesh mesh);
 	void outputKnife();
-	float calWorth(Group& group1, Group& group2);
+	
 };
 
 #endif // UTILITY_H

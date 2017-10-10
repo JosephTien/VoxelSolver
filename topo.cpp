@@ -55,6 +55,22 @@ void Topo::genKnife() {
 	knifes = genKnife(splitNorm, knifeIdx);
 }
 
+void Topo::genAllKnife() {
+	knifes = std::vector<Plane>();
+	knifeIdx = std::vector<int>();
+	for (int i = 0; i < edgenum; i++) {
+		knifes.push_back(Plane(splitNorm[i], getEdgeCent(i)));
+		knifeIdx.push_back(i);
+	}
+}
+
+void Topo::genCapsule() {
+	caps = std::vector<Capsule>();
+	for (int i = 0; i < edgenum; i++) {
+		caps.push_back(Capsule(vertices[edges[i].ia], vertices[edges[i].ib], radii));
+	}
+}
+
 std::vector<Plane> Topo::genKnife(std::vector<Vector3> splitNorm, std::vector<int>& knifeIdx) {
 	float angthre = cos(5.0f * M_PI / 180.0f);
 	float disthre = 2.5f;
@@ -144,21 +160,31 @@ void Topo::purneAva(Group &group, Piece &piece) {
 		TopoEdge edge = edges[touchedge];
 		Vector3 cent = (vertices[edge.ia] + vertices[edge.ib]) / 2;
 		Vector3 norm = piece.touchinfos[i].dir;
-		
+		Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
+		/*
 		std::vector<Vector3> ava_new;
 		for (int j = 0; j < group.ava.size(); j++) {
 			if (group.ava[j].dot(norm) > cos((90 - group.plus)*M_PI / 180))ava_new.push_back(group.ava[j]);
 		}
 		group.ava.swap(ava_new);
 		group.avanum = group.ava.size();
-		/*
+		*/
 		int flag = 0;
 		for (int j = 0; j < group.avanum; j++) {
 			if (group.ava[j].dot(norm) > cos((90 - group.plus)*M_PI / 180))group.ava[flag++] = group.ava[j];
 		}
 		group.avanum = flag;
-		*/
 	}	
+}
+
+void Topo::boundAva(Group &group, std::vector<Vector3> bound) {
+	for (int i = 0; i < bound.size(); i++) {
+		int flag = 0;
+		for (int j = 0; j < group.avanum; j++) {
+			if (group.ava[j].dot(bound[i]) < cos(group.plus * 6 * M_PI / 180))group.ava[flag++] = group.ava[j];
+		}
+		group.avanum = flag;
+	}
 }
 
 void Topo::prepareData() {
@@ -582,6 +608,29 @@ void Topo::geneLess() {
 		std::cout << i << " " << angles[i] << " " << maxcal << std::endl;
 	}
 	std::cout << "Cal Less Knife Done!" << std::endl;
+}
+
+std::vector<Vector3> Topo::calTouchBound(std::set<TouchInfo> &tis) {
+	std::vector<Vector3> bound;
+	std::set<int> touche;
+	for (auto t : tis) touche.insert(t.e);
+	for (auto t : tis) {
+		int ei = edges[t.e].ia;
+		for (auto e : verticeedge[ei]) {
+			if (touche.count(e) > 0)continue;
+			Vector3 vec = getEdgeVec(e);
+			if (edges[e].ia != ei) vec*-1;
+			bound.push_back(vec);
+		}
+		ei = edges[t.e].ib;
+		for (auto e : verticeedge[ei]) {
+			if (touche.count(e) > 0)continue;
+			Vector3 vec = getEdgeVec(e);
+			if (edges[e].ia != ei) vec*-1;
+			bound.push_back(vec);
+		}
+	}
+	return bound;
 }
 
 //uncheck : thre, split
