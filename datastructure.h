@@ -4,9 +4,42 @@
 #include "pch.h"
 #include "mesh.h"
 
+class Worth {
+public:
+	std::vector<float> val;
+	Worth() {}
+	Worth(std::vector<float> val_) {
+		val = std::vector<float>(val_.size());
+		for (int i = 0; i < val_.size(); i++) {
+			val[i] = val_[i];
+		}
+	}
+	bool operator < (const Worth& tar) const
+	{
+		for (int i = 0; i < val.size(); i++) {
+			if (val[i] != tar.val[i])return val[i] < tar.val[i];
+		}
+		return false;
+	}
+	bool operator == (const Worth& tar) const
+	{
+		for (int i = 0; i < val.size(); i++) {
+			if (val[i] != tar.val[i])return false;
+		}
+		return true;
+	}
+	bool operator > (const Worth& tar) const
+	{
+		for (int i = 0; i < val.size(); i++) {
+			if (val[i] != tar.val[i])return val[i] > tar.val[i];
+		}
+		return false;
+	}
+};
+
 class GroupLink {
 public:
-	GroupLink(int ida, int idb, float worth, float volume) {
+	GroupLink(int ida, int idb, Worth worth) {
 		if (ida > idb) {
 			this->ida = idb;
 			this->idb = ida;
@@ -16,10 +49,20 @@ public:
 			this->idb = idb;
 		}
 		this->worth = worth;
-		this->volume = volume;
+	}
+	GroupLink(int ida, int idb) {
+		if (ida > idb) {
+			this->ida = idb;
+			this->idb = ida;
+		}
+		else {
+			this->ida = ida;
+			this->idb = idb;
+		}
 	}
 	int ida, idb;
-	float worth;
+	//float worth;
+	Worth worth;
 	float volume;
 	bool operator < (const GroupLink& tar) const
 	{
@@ -168,21 +211,21 @@ public:
 	Hash operator|(const Hash& tar) {
 		Hash newhash = *this;
 		for (int i = 0; i < hash.size(); i++) {
-			newhash.hash[i] = newhash.hash[i] | hash[i];
+			newhash.hash[i] = newhash.hash[i] | tar.hash[i];
 		}
 		return newhash;
 	}
 	Hash operator&(const Hash& tar) {
 		Hash newhash = *this;
 		for (int i = 0; i < hash.size(); i++) {
-			newhash.hash[i] = newhash.hash[i] & hash[i];
+			newhash.hash[i] = newhash.hash[i] & tar.hash[i];
 		}
 		return newhash;
 	}
 	Hash operator^(const Hash& tar) {
 		Hash newhash = *this;
 		for (int i = 0; i < hash.size(); i++) {
-			newhash.hash[i] = newhash.hash[i] ^ hash[i];
+			newhash.hash[i] = newhash.hash[i] ^ tar.hash[i];
 		}
 		return newhash;
 	}
@@ -225,6 +268,31 @@ public:
 	*/
 };
 
+class Cube {
+public:
+	Vector3 ld, ru;
+	Vector3 size;
+	Vector3 cent;
+	void apply(Vector3 ld, Vector3 ru) {
+		this->ld = ld;
+		this->ru = ru;
+		size = (ru - ld);
+		cent = (ru + ld) / 2;
+	}
+	Cube() {};
+	Cube(Vector3 ld, Vector3 ru) {
+		apply(ld, ru);
+	}
+	void mod(float val, int state) {
+		if (state == 0)ru.x = std::min(ru.x, val);
+		if (state == 1)ld.x = std::max(ld.x, val);
+		if (state == 2)ru.y = std::min(ru.y, val);
+		if (state == 3)ld.y = std::max(ld.y, val);
+		if (state == 4)ru.z = std::min(ru.z, val);
+		if (state == 5)ld.z = std::max(ld.z, val);
+	}
+};
+
 class Piece
 {
 public:
@@ -239,10 +307,20 @@ public:
 	Mesh mesh;
 	Hash hash;
 	int id;
+	int it;//supervoxel
 	std::vector<TouchInfo> touchinfos;
+	std::vector<TouchInfo> boundinfos;
+	std::set<int> boundids;
 	std::vector<Vector3> voxels;
 	std::vector<int> voxelsi;
-	bool exist = false;
+	std::set<int> neighbor;//piece id
+	std::map<int, std::vector<int>> contactmap;
+	std::vector<int> upvoxels;
+	std::vector<int> downvoxels;
+	Vector3 max, min;
+	int belong = -1;
+	bool removed = false;
+	bool iscube = false;
 	float volume = 0;
 	bool isNei(Piece tar) {
 		return hash.difNum(tar.hash) == 1;
@@ -256,20 +334,41 @@ public:
 	//std::vector<Piece> pieces;
 	std::vector<int> pieces;
 	std::vector<Vector3> ava;
-	std::vector<Vector3> bound;
+	std::vector<Vector3> avalist;
+	std::vector<int> avalevel;
+	std::set<int> avaset;
+	std::map<int, std::vector<int>> contactmap;
+	std::vector<int> borde;//voxels
 	int avanum=0;
-	const float plus = 15.0f;
+	int bordenum = 0;
+	const float plus = 90.0f;
+	const float thre = 60.0f;
+	bool trigger = false;
+	bool removed = false;
 	int id;
 	std::set<int> neighbor;//id
+	std::vector<int> upvoxels;
+	std::vector<int> downvoxels;
+	std::vector<std::set<int>> upplane;
+	std::vector<std::set<int>> downplane;
+	Vector3 max = Vector3(FLT_MIN, FLT_MIN, FLT_MIN), min = Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
+	bool zcav = false;
 	float volume = 0;
 	void initAva();
+	void initAvaLev();
 	Mesh getMesh(std::vector<Piece> & pieces);
-	void operator=(const Group& group) {
+	void operator=(const Group& group) {//useless?
 		pieces = group.pieces;
-		ava = group.ava;
 		id = group.id;
+		ava = group.ava;
+		avalist = group.avalist;
 		avanum = group.avanum;
+		avaset = group.avaset;
 		volume = group.volume;
+		borde = group.borde;
+		upplane = group.upplane;
+		downplane = group.downplane;
+		//contactmap = group.contactmap;
 	}
 };
 
@@ -363,6 +462,11 @@ public:
 			return p2;
 		}
 	}
+	float rate(Vector3 pos){
+		Vector3 proj = this->proj(pos);
+		Vector3 vec = proj - p1;
+		return vec.length() / (p2 - p1).length();
+	}
 	bool between(Vector3 center) {
 		Vector3 vec = (p2 - p1);
 		float ll = vec.dot(vec);
@@ -375,19 +479,20 @@ public:
 class Tag {
 public:
 	Tag() {}
-	Tag(int e, int side, int disthre){
+	Tag(int e, int side, int lev){
 		this->e = e;
 		this->side = side;
-		this->disthre = disthre;
+		this->lev = lev;
 	}
 	int e;
 	bool side;
-	int disthre;
+	int lev;
+	int tlev = 0;
 	bool operator < (const Tag& tar) const
 	{
 		if (e == tar.e) {
 			if (side == tar.side) {
-				return disthre < tar.disthre;
+				return lev < tar.lev;
 			}
 			return !side;
 		}
@@ -395,13 +500,13 @@ public:
 	}
 	bool operator == (const Tag& tar) const
 	{
-		return e == tar.e && side == tar.side && disthre == tar.disthre;
+		return e == tar.e && side == tar.side && lev == tar.lev;
 	}
 	bool operator > (const Tag& tar) const
 	{
 		if (e == tar.e) {
 			if (side == tar.side) {
-				return disthre > tar.disthre;
+				return lev > tar.lev;
 			}
 			return side;
 		}
@@ -417,18 +522,20 @@ public:
 		this->pos = pos;
 		this->i = i;
 	}
-	Hash hash;
-	Hash hash2;
+	Hash hash;//plane side (influence by hash2)
+	Hash hash2;//related edge
+	Hash hash3;//far collide
+	Hash hash4;//manhatan 
 	Tag tag;
 	Vector3 linkval;
 	float dis;
 	Vector3 pos;
 	int i, ix, iy, iz;
+	int it, itx, ity, itz;
 	int belong;
 	bool exist = false;
 	bool removed = false;
 	bool immo = false;
-	
 	std::set<int> touchid;
 	void setXYZ(int ix, int iy, int iz) {
 		this->ix = ix;
@@ -440,6 +547,20 @@ public:
 		iy = this->iy;
 		iz = this->iz;
 	}
+	bool tequal(const Voxel& tar) {
+		return itx == tar.itx&&ity == tar.ity&&itz == tar.itz;
+	}
+	void setTXYZ(int itx, int ity, int itz) {
+		this->itx = itx;
+		this->ity = ity;
+		this->itz = itz;
+	}
+	void getTXYZ(int& itx, int& ity, int& itz) {
+		itx = this->itx;
+		ity = this->ity;
+		itz = this->itz;
+	}
 }; 
+
 
 #endif // DATASTRUCTURE_H

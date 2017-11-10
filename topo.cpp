@@ -1,5 +1,12 @@
 #include "topo.h"
 
+Vector3 getRandomVec() {
+	std::random_device rd;
+	std::mt19937 generator(rd());
+	std::uniform_real_distribution<float> rand(0, 0.01);
+	return Vector3(rand(generator), rand(generator), rand(generator));
+}
+
 void Topo::read() {
 	std::ifstream ifs;
 	//*********************
@@ -8,7 +15,7 @@ void Topo::read() {
 	for (int i = 0; i < verticenum; i++) {
 		float x, y, z;
 		ifs >> x >> y >> z;
-		vertices.push_back(Vector3(x, y, z));
+		vertices.push_back(Vector3(x, y, z)+ getRandomVec());
 	}
 	for (int i = 0; i < edgenum; i++) {
 		float a ,b;
@@ -45,10 +52,51 @@ void Topo::read() {
 		angles.push_back(a);
 		Vector3 vec = (vertices[edges[i].ib] - vertices[edges[i].ia]).normalize();
 		splitNorm[i] = (Matrix4().rotate(angles[i], vec) * splitNorm[i]).normalize();
+		//std::cout << splitNorm[i] << std::endl;
 	}
 	ifs.close();
 	//*********************
 	prepareData();
+	fixAngleDistance();
+}
+
+float Topo::angleFix(float angle) {
+	float angleFix = 1e-5f;
+	if (angle <= 90) angleFix = std::max(angleFix, radii / tan(angle / 2 / 180 * (float)M_PI));
+	else angleFix = std::max(angleFix, radii * cos((angle - 90) / 180 * (float)M_PI));
+	return angleFix;
+}
+
+void Topo::fixAngleDistance() {
+	for (int i = 0; i < edgenum; i++)
+	{
+		float minAngle1 = 180;
+		float minAngle2 = 180;
+		int idx1 = edges[i].ia;
+		int idx2 = edges[i].ib;
+		for(auto idxTo : verticevertice[idx1])
+		{
+			if (idxTo == idx2) continue;
+			Vector3 vecTo = vertices[idxTo] - vertices[idx1];
+			Vector3 vecFrom = vertices[idx2] - vertices[idx1];
+			float angle = acos(vecFrom.normalize().dot(vecTo.normalize())) * 180 / M_PI;
+			minAngle1 = std::min(angle , minAngle1);
+		}
+		for (auto idxTo : verticevertice[idx2])
+		{
+			if (idxTo == idx1) continue;
+			Vector3 vecTo = vertices[idxTo] - vertices[idx2];
+			Vector3 vecFrom = vertices[idx1] - vertices[idx2];
+			float angle = acos(vecFrom.normalize().dot(vecTo.normalize())) * 180 / M_PI;
+			minAngle2 = std::min(angle, minAngle2);
+		}
+
+		if (verticeedge[edges[i].ia].size() == 1) edges[i].fixa = radii;
+		edges[i].fixa = std::max(radii, angleFix(minAngle1));
+
+		if (verticeedge[edges[i].ib].size() == 1) edges[i].fixb = radii;
+		edges[i].fixb = std::max(radii, angleFix(minAngle2));
+	}
 }
 
 void Topo::genKnife() {
@@ -154,34 +202,169 @@ void Topo::calTouch(Piece & piece) {
 	}
 }
 
+void Topo::calTouchBound(Piece & piece) {
+	/*
+	for (auto ti : piece.touchinfos) {
+		TopoEdge edge = edges[ti.e];
+		Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
+		Vector3 norm = ti.dir.normalize();
+		for (float angle = -180; angle < 181; angle += piece.plus) {
+			Vector3 to = Matrix4().rotate(angle, vec) * norm;
+			piece.boundinfos.push_back(ti);
+		}
+	}
+	//***************************************
+	std::vector<TouchInfo> boundinfos_;
+	for (auto bi : piece.boundinfos) {
+		bool valid = true;
+		Vector3 to = bi.dir;
+		for (auto ti : piece.touchinfos) {
+			TopoEdge edge = edges[ti.e];
+			Vector3 norm = ti.dir.normalize();
+			Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
+			Vector3 per = vec.cross(to).cross(vec).normalize();
+			float anglefront = acos(per.dot(to)) * 180 / M_PI;
+			if (anglefront > 90 - piece.thre) {
+				valid = false;
+			}
+		}
+		if(valid)boundinfos_.push_back(bi);
+	}
+	piece.boundinfos.swap(boundinfos_);
+	*/
+	//***************************************
+	int sidethre = 30;
+	std::vector<float> rangemin;
+	std::vector<float> rangemax;
+	for (auto ti : piece.touchinfos) {
+		TopoEdge edge = edges[ti.e];
+		Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
+		Vector3 norm = ti.dir.normalize();
+		float anglemin = -90;
+		float anglemax = 90;
+		for (auto ti2 : piece.touchinfos) {
+			if (ti.e == ti2.e)continue;
+			if (verticeedge[edges[ti.e].ia].count(ti2.e) == 0 && verticeedge[edges[ti.e].ib].count(ti2.e) == 0)continue;
+			Vector3 dir2 = ti2.dir.normalize();
+			if (std::abs(dir2.dot(vec)) > cos(5.0f / 180.0f * M_PI))continue;
+			Vector3 per = vec.cross(dir2).cross(vec);
+			float angleside = acos(norm.dot(per)) * 180.0f / M_PI;
+			if (angleside<179.5 && norm.cross(per).dot(vec) < 0)angleside *= -1;
+			float left = angleside - 90;
+			float right = angleside + 90;
+			anglemin = std::max(anglemin, left);
+			anglemax = std::min(anglemax, right);
+		}
+		rangemin.push_back(anglemin);
+		rangemax.push_back(anglemax);
+	}
+	//***************************************
+
+	int plus = Group().plus;
+	int s = 360 / plus;
+	int id = 0;
+	for (float x = 0.1; x < 360; x += plus) for (float y = 0.1; y < 360; y += plus) for (float z = 0.1; z < 360; z += plus, id++) {
+		Matrix4 mat; mat.rotateX(x); mat.rotateY(y); mat.rotateZ(z);
+		Vector3 to = mat*Vector3(1, 0, 0);
+		bool valid = false;
+		int i = -1;
+		for (auto ti : piece.touchinfos) {
+			i++;
+			TopoEdge edge = edges[ti.e];
+			Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
+			if (std::abs(vec.dot(to)) > cos(5.0f / 180.0f * M_PI)) {
+				valid = true;
+				break;
+			}
+			Vector3 norm = ti.dir.normalize();
+			Vector3 per = vec.cross(to).cross(vec).normalize();
+			float _angleside = acos(norm.dot(-per)) * 180.0f / M_PI;
+			if (_angleside < 179.5 && norm.cross(-per).dot(vec) < 0)_angleside *= -1;
+			if (rangemin[i] - sidethre < _angleside && _angleside < rangemax[i] + sidethre) {
+				valid = true;
+				break;
+			}
+		}
+		if(valid)piece.boundids.insert(id);
+	}
+}
+
 void Topo::purneAva(Group &group, Piece &piece) {
+	for (auto id : piece.boundids) {
+		group.avaset.erase(id);
+	}
+	if(group.ava.size()<group.avaset.size())group.ava = std::vector<Vector3>(group.avaset.size());
+	int flag = 0;
+	for (auto id : group.avaset) {
+		group.ava[flag++] = avalist[id];
+	}
+	group.avanum = flag;
+	/*
+	std::vector<Vector3> purneDir;
+	for (auto ti : piece.touchinfos) {
+		Vector3 dir = ti.dir.normalize();
+		bool valid = false;
+		for (auto ti2 : piece.touchinfos) {
+			if (ti.e == ti2.e)continue;
+			TopoEdge edge = edges[ti2.e];
+			Vector3 norm = ti2.dir.normalize();
+			Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
+			if (std::abs(dir.dot(norm)) > cos(75 * M_PI / 180) || std::abs(dir.dot(vec)) > cos(75 * M_PI / 180))valid = true;
+		}
+		if (valid)purneDir.push_back(dir);
+	}
+	int flag = 0;
+	for (int j = 0; j < group.avanum; j++) {
+		bool valid = false;
+		for (auto ti : piece.touchinfos) {
+			Vector3 dir = ti.dir.normalize();
+			if (group.ava[j].dot(dir) > cos(74 * M_PI / 180))valid = true;
+		}
+		if (piece.touchinfos.size() == 0)valid = true;
+		for (auto dir : purneDir) {
+			if (group.ava[j].dot(dir) < cos(76 * M_PI / 180))valid = false;
+		}
+		if(valid)group.ava[flag++] = group.ava[j];
+	}
+	group.avanum = flag;
+	*/
+	/*
 	for (int i = 0; i < piece.touchinfos.size(); i++) {
 		int touchedge = piece.touchinfos[i].e;
 		TopoEdge edge = edges[touchedge];
 		Vector3 cent = (vertices[edge.ia] + vertices[edge.ib]) / 2;
-		Vector3 norm = piece.touchinfos[i].dir;
+		Vector3 norm = piece.touchinfos[i].dir.normalize();
 		Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
-		/*
-		std::vector<Vector3> ava_new;
-		for (int j = 0; j < group.ava.size(); j++) {
-			if (group.ava[j].dot(norm) > cos((90 - group.plus)*M_PI / 180))ava_new.push_back(group.ava[j]);
-		}
-		group.ava.swap(ava_new);
-		group.avanum = group.ava.size();
-		*/
 		int flag = 0;
 		for (int j = 0; j < group.avanum; j++) {
-			if (group.ava[j].dot(norm) > cos((90 - group.plus)*M_PI / 180))group.ava[flag++] = group.ava[j];
+			Vector3 to = group.ava[j];
+			Vector3 per = vec.cross(to).cross(vec).normalize();
+			float anglefront = acos(per.dot(to)) * 180 / M_PI;
+			float angleside = acos(per.dot(norm)) * 180 / M_PI;
+			if (anglefront < 85 && angleside < 76)group.ava[flag++] = group.ava[j];
+			//if (group.ava[j].dot(norm) > cos(85 * M_PI / 180))group.ava[flag++] = group.ava[j];
 		}
 		group.avanum = flag;
-	}	
+	}
+	*/
 }
 
 void Topo::boundAva(Group &group, std::vector<Vector3> bound) {
 	for (int i = 0; i < bound.size(); i++) {
 		int flag = 0;
 		for (int j = 0; j < group.avanum; j++) {
-			if (group.ava[j].dot(bound[i]) < cos(group.plus * 6 * M_PI / 180))group.ava[flag++] = group.ava[j];
+			if (group.ava[j].dot(bound[i]) < cos((90 - 5) * M_PI / 180))group.ava[flag++] = group.ava[j];
+		}
+		group.avanum = flag;
+	}
+}
+
+void Topo::boundFarAva(Group &group, std::vector<Vector3> bound) {
+	for (int i = 0; i < bound.size(); i++) {
+		int flag = 0;
+		for (int j = 0; j < group.avanum; j++) {
+			//if (group.ava[j].dot(bound[i]) < cos((90 - group.thre) * M_PI / 180))group.ava[flag++] = group.ava[j];
+			if (group.ava[j].dot(bound[i]) < cos(group.thre * M_PI / 180))group.ava[flag++] = group.ava[j];
 		}
 		group.avanum = flag;
 	}
@@ -191,10 +374,13 @@ void Topo::prepareData() {
 	
 	for (int i = 0; i < verticenum; i++) {
 		verticeedge.push_back(std::set<int>());
+		verticevertice.push_back(std::set<int>());
 	}
 	for (int i = 0; i < edgenum; i++) {
 		verticeedge[edges[i].ia].insert(i);
 		verticeedge[edges[i].ib].insert(i);
+		verticevertice[edges[i].ia].insert(edges[i].ib);
+		verticevertice[edges[i].ib].insert(edges[i].ia);
 	}
 	//************************************
 	for (int i = 0; i < verticenum; i++) {
@@ -273,7 +459,42 @@ float Topo::calAngleArgVal(std::vector<float> angles) {
 			}
 		}
 		return val;
-		
+	}
+	else if (optMode == 2) {
+		std::vector<Vector3> splitNorm_;
+		for (int i = 0; i < edgenum; i++) {
+			Vector3 vec = (vertices[edges[i].ib] - vertices[edges[i].ia]).normalize();
+			splitNorm_.push_back((Matrix4().rotate(angles[i], vec) * splitNorm_ori[i]).normalize());
+		}
+		float val = 0;
+		for (int i = 0; i < verticenum; i++) {
+			//float curval = 1;
+			float curval = 0;
+			for (auto j : verticeedge[i]) {
+				for (auto k : verticeedge[i]) {
+					if (j >= k)continue;
+					Vector3 n1 = splitNorm_[j].normalize();
+					Vector3 n2 = splitNorm_[k].normalize();
+					float v = powf(abs(n1.dot(n2)), 1);
+					//curval = curval < v ? curval : v;
+					curval += v;
+				}
+			}
+			if (isimpo[i]) curval = 0;
+			val += curval;
+		}
+		Vector3 samp[3] = { Vector3(1,0,0) ,Vector3(0,1,0),Vector3(0,0,1) };
+		for (int i = 0; i < splitNorm_ori.size();i++) {
+			Vector3 norm = splitNorm_[i].normalize();
+			float maxdot = 0;
+			for (int j = 0; j < 3; j++) {
+				float dot = std::abs(norm.dot(samp[j]));
+				dot = (int)(dot * 90);
+				maxdot = std::max(dot, maxdot);
+			}
+			val += 10000 * maxdot;
+		}
+		return val;
 	}
 	return 0;
 }
@@ -471,6 +692,107 @@ void Topo::geneOpt(float from, float to, float lev) {
 	geneOpt(pos, from, to, lev);
 }
 
+Vector3 samp[3] = { Vector3(1,0,0) ,Vector3(0,1,0),Vector3(0,0,1) };
+Vector3 Topo::genRandomOrgdir() {
+	std::random_device rd;
+	std::mt19937 generator(rd());
+	std::uniform_real_distribution<float> randangidx(0, 3);
+	Vector3 dir = samp[(int)(randangidx(generator))];
+	return dir;
+}
+
+float Topo::calPerAngle(Vector3 norm, Vector3 vec, Vector3 dir) {
+	norm.normalize();
+	vec.normalize();
+	dir.normalize();
+	if (std::abs(vec.dot(dir)) > 0.99)return 0;
+	vec.cross(dir).cross(vec);
+	float angle = acos(norm.dot(dir)) / M_PI * 180;
+	if (norm.dot(dir) < 0)angle *= -1;
+	return angle;
+}
+
+void Topo::geneOpt_org() {
+	int iternum = 100000;
+	int poolnum = 300;
+	int elitenum = 100;
+	int shownum = 10;
+	int samenum = 100;
+	int mutaterate = edgenum;
+	float disrate = 0.1;
+	std::random_device rd;
+	std::mt19937 generator(rd());
+	std::uniform_real_distribution<float> mutate(0, mutaterate);
+	std::uniform_real_distribution<float> choosen(0, 3);
+	std::normal_distribution<float> randpick(0, elitenum * disrate);
+	//*************************************************
+	std::priority_queue<AngArg> pool;
+	for (int i = 0; i < poolnum; i++) {
+		std::vector<float> as = std::vector<float>(edgenum);
+		for (int j = 0; j < edgenum; j++) {
+			Vector3 vec = getEdgeVec(j).normalize();
+			Vector3 dir = genRandomOrgdir().normalize();
+			while (std::abs(vec.dot(dir))>0.95) {
+				vec = getEdgeVec(j).normalize();
+				dir = genRandomOrgdir().normalize();
+			}
+			as[j] = calPerAngle(splitNorm_ori[j].normalize(), vec, dir);
+		}
+		pool.push(AngArg(as, calAngleArgVal(as)));
+	}
+	float maxval = 0;
+	float maxcnt = 0;
+	for (int n = 0; n < iternum; n++) {
+		std::vector<AngArg> list(poolnum);
+		std::vector<AngArg> list_new(poolnum);
+		for (int i = 0; i < elitenum; i++) {
+			list[i] = pool.top();
+			list_new[i] = pool.top();
+			pool.pop();
+		}
+		#pragma omp parallel for
+		for (int i = elitenum; i < poolnum; i++) {
+			int ia = (int)abs((int)randpick(generator));
+			int ib = (int)abs((int)randpick(generator));
+			while (ia >= elitenum)ia = abs((int)randpick(generator));
+			while (ib >= elitenum)ib = abs((int)randpick(generator));
+			std::vector<float> as;
+			for (int j = 0; j < list[ia].angles.size(); j++) {
+				if ((int)mutate(generator) == 0) {
+					Vector3 vec = getEdgeVec(j).normalize();
+					Vector3 dir = genRandomOrgdir().normalize();
+					while (std::abs(vec.dot(dir))>0.95) {
+						vec = getEdgeVec(j).normalize();
+						dir = genRandomOrgdir().normalize();
+					}
+					as.push_back(calPerAngle(splitNorm_ori[j].normalize(), vec, dir));
+				}
+				else {
+					if ((int)choosen(generator) == 0)as.push_back(list[ia].angles[j]);
+					else as.push_back(list[ib].angles[j]);
+				}
+			}
+			list_new[i] = (AngArg(as, calAngleArgVal(as)));
+		}
+		pool.swap(std::priority_queue<AngArg>());
+		for (int i = 0; i < poolnum; i++) pool.push(list_new[i]);
+		if (n % shownum == 0) {
+			float curval = pool.top().val;
+			if (curval > maxval) {
+				maxcnt = 0;
+				maxval = curval;
+				std::cout << curval << std::endl;
+			}
+			else {
+				maxcnt++;
+				if (maxcnt >= samenum)break;
+			}
+		}
+	}
+	angles = pool.top().angles;
+	std::cout << "__________________________________________________________________" << std::endl;
+}
+
 void Topo::geneOpt(std::vector<bool> pos, float from, float to, float lev) {
 	int iternum = 100000;
 	int poolnum = 300;
@@ -492,7 +814,7 @@ void Topo::geneOpt(std::vector<bool> pos, float from, float to, float lev) {
 	for (int i = 0; i < poolnum; i++) {
 		std::vector<float> as = genRandomAngles(from, to, lev);
 		for (int j = 0; j < edgenum; j++) {
-			if (!pos[j])as[j] = angles[j];
+			if (!pos[j])as[j] = angles[j];//???
 			else as[j] += angles[j];
 		}
 		pool.push(AngArg(as, calAngleArgVal(as)));
@@ -606,6 +928,35 @@ void Topo::geneLess() {
 		}
 		angles[i] = ((int)(minangle / dif + 0.5f)) * dif;
 		std::cout << i << " " << angles[i] << " " << maxcal << std::endl;
+	}
+	std::cout << "Cal Less Knife Done!" << std::endl;
+}
+
+void Topo::geneOrg() {
+	return;
+	//*******************************************************
+	std::cout << "Cal Less Knife......" << std::endl;
+	Vector3 samp[3] = { Vector3(1,0,0) ,Vector3(0,1,0),Vector3(0,0,1) };
+	//#pragma omp parallel for
+	for (int i = 0; i < splitNorm_ori.size(); i++) {
+		int maxdot = 0;
+		Vector3 maxdir;
+		Vector3 norm = splitNorm_ori[i].normalize();
+		Vector3 vec = getEdgeVec(i).normalize();
+		for (int j = 0; j < 3; j++) {
+			Vector3 dir = samp[j].normalize();
+			dir = vec.cross(dir).cross(vec);
+			float dot = std::abs(dir.dot(samp[j]));
+			if (std::abs(samp[j].dot(vec)) > 0.95) {
+				dot = 0;
+			}
+			if (dot >= maxdot) {
+				maxdot = dot;
+				maxdir = dir;
+			}
+		}
+		angles[i] = acos(norm.dot(maxdir)) / M_PI * 180;
+		if (norm.cross(maxdir).dot(vec) < 0)angles[i] *= -1;
 	}
 	std::cout << "Cal Less Knife Done!" << std::endl;
 }

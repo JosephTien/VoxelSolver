@@ -33,9 +33,15 @@ public:
 	IglMachine iglMachine;
 	Topo topo;
 	std::vector<Voxel> voxels;
+	std::vector<std::vector<int>> supervoxels;//
+	std::vector<bool> supervoxeltouch;//
+	std::map<int, std::map<int, std::vector<int>>> piececontact;
+
 	std::vector<Piece> pieces;
 	std::vector<Group> groups;
+	std::set<int> finalgroupset;
 	std::vector<int> groups_final;
+	std::vector<int> groups_final_assem;
 	std::priority_queue<GroupLink> groupLink;
 	std::vector<int> groupIdxMap;//std::map<int, int> groupIdxMap;
 	std::vector<bool> idexist;
@@ -43,14 +49,27 @@ public:
 	int groupidcnt = 0;
 	Vector3 ld, ru;
 	const float l = 2.0f;
-	float far = 100.0f;// 10.0f;
+	float far = 10.0f;// 10.0f;
+	int levlim = 3;
+	int colthre = 10;
+	int contlim = 10;
+	bool tagmode = false;
+	bool nearmode = false;
+	bool manhmode = false;
+	bool clearmode = false;
+	bool checkcavmode = false;//似乎有一些問題，顯示voxel看看?
+	std::map<Hash, Cube> manhCubeMap;
+	float manh = topo.radii + topo.radii;
+	Vector3 move;
+	int stx = 12, sty = 12, stz = 12;
+	int ntx, nty, ntz;
 	clock_t t1, t2;
 	//*************************
 	void tic() {
 		t1 = clock();
 	}
 	void toc() {
-		t2 = clock(); printf("%lf sec\n", (t2 - t1) / (double)(CLOCKS_PER_SEC)); t1 = clock();
+		t2 = clock(); printf("%lf sec\n", (t2 - t1) / (double)(CLOCKS_PER_SEC));
 	}
 	//*************************
 	void genRandomTest(int k);
@@ -62,20 +81,37 @@ public:
 	void genPiece();
 	void genPiece_voxel();
 	void appendPiece(Group& group, Piece& piece);
+	void collectCav(Group& group);
+	void checkCav(Group& group, Piece& piece);
+	void checkCav(Group& group, Group& group2);
 	void MergeGroup(Group& group1, Group& group2);
 	void initGroup();
+	void initGroupBorde(Group & group);
+	void purneGroupBorde(Group & group);
 	void calTouch(int p);
+	std::vector<Vector3> genBound(std::vector<int> contact);
 	void initLink();
 	void initLink_voxel();
-	float calWorth(Group& group1, Group& group2);
+	Worth calWorth(Group& group1, Group& group2);
+	Worth calWorth(Group& group1);
+	std::vector<Vector3> genBound(Group & group, std::set<int> ids);
+	Vector3 calGroupCenter(Group & group);
+	float calGroupRate(Group & group);
 	std::vector<int> calContact(Group & group, std::set<int> ids);
-	int calContact(Group & group1, Group & group2);
+	std::vector<int> calFarContact(Group & group, std::set<int> ids);
+	std::vector<int> calContact(Group & group1, Group & group2);
+	std::vector<int> calContact(Group & group);
+	std::vector<int> calBothContact(Group & group1, Group & group2, std::vector<std::set<int>> & contactgroup);
 	void optimize();
 	void iterate();
+	void recalAssem();
+	void noopt();
+	void purneAvaByNei(int i);
 	//*************************
 	int voxelId(int i, int j, int k, int mode);
+	void genVoxelByKnife_autotune();
+	float genVoxelByKnife();
 	void genPiece_voxel_bfs();
-	void genVoxelByKnife();
 	void genVoxel();
 	void genVoxelSeen();
 	void calVoxelSeen(int mode);
@@ -91,16 +127,19 @@ public:
 	//*************************
 	void voxelCollectSeen(int mode);
 	void genVoxelMesh(int p, int mode);
+	void purneVoxel(Group & group);
 	void genVoxelOutput();
 	void collectLast();
 	//*************************
 	void outputPiece();
+	void outputZip();
 	void outputPiece_voxel();
 	void outputGroup();
 	void outputGroup_voxel();
 	void outputMesh(char * str, Mesh mesh);
 	void outputKnife();
-	
+	//*************************
+	float max(std::vector<float> list);
 };
 
 #endif // UTILITY_H

@@ -22,21 +22,35 @@ int main(int argc, char *argv[]) {
 			//utility.topo.beeOpt();
 			utility.topo.outputRotateArg();
 		}
+		else if (strcmp(argv[1], "org") == 0) {
+			utility.topo.read();
+			//utility.topo.geneOrg();
+			utility.topo.optMode = 1;	
+			utility.topo.geneOpt_org();
+			utility.topo.outputRotateArg();
+		}
 		else if (strcmp(argv[1], "field") == 0) {
 			utility.topo.read();
-			utility.calBound();
 			utility.topo.genAllKnife();
 			utility.topo.genCapsule();
 			//**********************
+			utility.tic();
+			utility.calBound();
+			//utility.genVoxelByKnife_autotune();
+			utility.genVoxelByKnife();
+			
 			utility.genPiece_voxel();
 			utility.initGroup();
 			utility.initLink_voxel();
 			utility.optimize();
 			utility.iterate();
+			utility.noopt();
+			utility.recalAssem();
 			//**********************
 			//utility.collectLast();
 			utility.genVoxelOutput();
 			utility.outputGroup_voxel();
+			utility.outputZip();
 			utility.outputKnife();
 			std::cout << "Done" << std::endl;
 		}
