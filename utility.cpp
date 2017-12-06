@@ -195,6 +195,29 @@ int Utility::voxelId(int i, int j, int k, int mode) {
 	return idx;
 }
 
+int Utility::voxelTId(int i, int j, int k, int mode) {
+	int idxt;
+	if (mode == 0)idxt = i * nty * ntz + j * ntz + k;
+	if (mode == 1)idxt = (ntx - i - 1) * nty * ntz + j * ntz + k;
+	if (mode == 2)idxt = j * nty * ntz + i * ntz + k;
+	if (mode == 3)idxt = j * nty * ntz + (nty - i - 1) * ntz + k;
+	if (mode == 4)idxt = j * nty * ntz + k * ntz + i;
+	if (mode == 5)idxt = j * nty * ntz + k * ntz + (ntz - i - 1);
+	return idxt;
+}
+
+void Utility::voxelTId_(int & i, int & j, int & k, int mode, int idxt) {
+	int itx = idxt / (nty * ntz);
+	int ity = idxt / ntz % nty;
+	int itz = idxt % ntz;
+	if (mode == 0) { i = itx; j = ity; k = itz; }
+	if (mode == 1) { i = ntx - itx - 1; j = ity; k = itz; }
+	if (mode == 2) { j = itx; i = ity; k = itz; }
+	if (mode == 3) { j = itx; i = nty - ity - 1; k = itz; }
+	if (mode == 4) { j = itx; k = ity; i = itz; }
+	if (mode == 5) { j = itx; k = ity; i = ntz - itz - 1; }
+}
+
 void Utility::genVoxelSeen() {//將moveable direction塞入hash，有計算linkval
 	tic();
 	//*****************************
@@ -860,6 +883,180 @@ void Utility::genVoxelByKnife_autotune() {
 	genVoxelByKnife();
 }
 
+void Utility::genSuperVoxelBlock() {
+	voxels = std::vector<Voxel>(nx*ny*nz);
+	//***************************************************************
+	tic();
+	std::vector<std::set<int>> tnear(ntx * nty * ntz);
+	topo.tnear = std::vector<std::set<int>>(ntx * nty * ntz);
+	float ltx = stx * l / 2, lty = sty * l / 2, ltz = stz * l / 2;
+	//float lt = std::sqrtf(ltx*ltx + lty*lty + ltz*ltz);
+	float lt = std::min(ltx, std::min(lty,ltz));//short mode
+	float llt = sqrt(ltx * ltx + lty * lty + ltz * ltz);
+	#pragma omp parallel for
+	for (int itx = 0; itx < ntx; itx++) {
+		for (int ity = 0; ity < nty; ity++) {
+			for (int itz = 0; itz < ntz; itz++) {
+				Vector3 pos = ld + Vector3(l * (stx - 1) / 2, l * (sty - 1) / 2, l * (stz - 1) / 2) + Vector3(l * stx * itx, l * sty * ity, l * stz * itz);
+				int idxt = itx * nty * ntz + ity * ntz + itz;
+				for (int i = 0; i < topo.knifes.size(); i++) {
+					if (topo.caps[i].collide(pos, lt))tnear[idxt].insert(i);
+					if (topo.caps[i].collide(pos, llt))topo.tnear[idxt].insert(i);
+				}
+			}
+		}
+	}
+	printf("cal near - "); toc();
+	//***************************************************************
+	supervoxelblock = std::vector<std::vector<int>>(ntx * nty * ntz, std::vector<int>(6, 1));// : free ; 0 : block
+	topo.edgeblock = std::vector<std::vector<int>>(topo.edgenum, std::vector<int>(6, 1));// : free ; 0 : block
+	for (int mode = 0; mode < 6; mode++) {
+		int n, w1, w2;
+		if (mode / 2 == 0) { n = ntx; w1 = nty; w2 = ntz;}
+		if (mode / 2 == 1) { n = nty; w1 = ntx; w2 = ntz;}
+		if (mode / 2 == 2) { n = ntz; w1 = ntx; w2 = nty;}
+		int mode_ = (mode / 2 * 2) + ((mode % 2 + 1) % 2);
+		for (int i = 1; i < n; i++) {
+			for (int j = 0; j < w1; j++) {
+				for (int k = 0; k < w2; k++) {
+					int tidxp = voxelTId(i-1, j, k, mode);
+					int tidx = voxelTId(i, j, k, mode);
+					if (tnear[tidxp].size() == 0) {
+						supervoxelblock[tidx][mode] = supervoxelblock[tidxp][mode];
+					}
+					else {
+						supervoxelblock[tidx][mode] = 0;
+					}
+				}
+			}
+		}
+		for (int ti = 0; ti < tnear.size(); ti++) {
+			for (auto e : tnear[ti]) {
+				topo.edgeblock[e][mode] = std::min(topo.edgeblock[e][mode], supervoxelblock[ti][mode]);
+			}
+		}
+	}
+	for (int e = 0; e < topo.edgeblock.size(); e++) {
+		printf("Edge %d : ", e);
+		for (int i = 0; i < 6; i++) {
+			printf("%d ", topo.edgeblock[e][i]);
+		}
+		printf("\n");
+	}
+	
+}
+
+void Utility::preview() {
+	previewVoxelByKnife(topo.knifes);
+	previewPiece_voxel(topo.knifes);
+}
+
+void Utility::previewVoxelByKnife(std::vector<Plane>& knifes) {
+	tbits2 = std::vector<std::vector<bool>>(ntx * nty * ntz, std::vector<bool>(knifes.size(), false));
+	//*******************************************************************
+	tic();
+	float ltx = stx * l / 2, lty = sty * l / 2, ltz = stz * l / 2;
+	float lt = std::sqrtf(ltx*ltx + lty*lty + ltz*ltz);
+	lt = std::min(std::min(ltx, lty), ltz);
+	#pragma omp parallel for
+	for (int itx = 0; itx < ntx; itx++) {
+		for (int ity = 0; ity < nty; ity++) {
+			for (int itz = 0; itz < ntz; itz++) {
+				Vector3 pos = ld + Vector3(l * (stx - 1) / 2, l * (sty - 1) / 2, l * (stz - 1) / 2) + Vector3(l * stx * itx, l * sty * ity, l * stz * itz);
+				int idxt = itx * nty * ntz + ity * ntz + itz;
+				for (int i = 0; i < knifes.size(); i++) {
+					if (topo.caps[i].collide(pos, lt)) {
+						tnear[idxt].push_back(i);
+						tbits2[idxt][i] = true;
+					}
+				}
+			}
+		}
+	}
+	if (printdebug) { printf("cal near - "); toc(); }
+	//*******************************************************************
+	tic();
+	#pragma omp parallel for
+	for (int ix = 0; ix < nx; ix++) {
+		for (int iy = 0; iy < ny; iy++) {
+			for (int iz = 0; iz < nz; iz++) {
+				Vector3 pos = ld + Vector3(l*ix, l*iy, l*iz);
+				int idx = ix * ny * nz + iy * nz + iz;
+				int itx = ix / stx, ity = iy / sty, itz = iz / stz;
+				int idxt = itx * nty * ntz + ity * ntz + itz;
+				voxels[idx] = Voxel(Hash(), pos, idx);
+				voxels[idx].setXYZ(ix, iy, iz);
+				voxels[idx].setTXYZ(itx, ity, itz);
+				voxels[idx].it = idxt;
+				voxels[idx].hash.assignAll(knifes.size(), false);
+			}
+		}
+	}
+	if (printdebug) { printf("cal vox  - "); toc(); }
+	//*******************************************************************
+}
+
+void Utility::previewPiece_voxel(std::vector<Plane>& knifes) {
+	tic();
+	//*******************************************************************
+	#pragma omp parallel for
+	for (int idx = 0; idx<voxels.size(); idx++) {
+		int idxt = voxels[idx].it;
+		Vector3 pos = voxels[idx].pos;
+		for (auto i : tnear[idxt]) {
+			bool bit = knifes[i].distanceToPoint(pos) >= 0;
+			voxels[idx].hash.assign(i, bit & tbits2[idxt][i]);
+		}
+	}
+	if (printdebug) { printf("cal hash - "); toc(); }
+	//*******************************************************************
+	tic();
+	std::vector<std::map<Hash, int>> hashmaps(ntx*nty*ntz);
+	for(int idxt = 0; idxt < tnear.size(); idxt++){
+		//int idxt = itx * nty * ntz + ity * ntz + itz;
+		int itx = idxt / (nty*ntz);
+		int ity = idxt / ntz % nty;
+		int itz = idxt % ntz;
+		//printf("%d %d %d : %d %d %d\n", itx, ity, itz, ntx, nty, ntz);
+		for (int ix = itx * stx; ix < itx * stx + stx; ix++) for (int iy = ity * sty; iy < ity * sty + sty; iy++) for (int iz = itz * stz; iz < itz * stz + stz; iz++) {
+			int idx = ix * ny * nz + iy * nz + iz;
+			Hash hash = voxels[idx].hash;
+			if (hashmaps[idxt].count(hash) == 0) {
+				Piece piece;
+				piece.id = pieces.size();
+				hashmaps[idxt][hash] = piece.id;
+				pieces.push_back(piece);
+			}
+			int p = hashmaps[idxt][hash];
+			voxels[idx].belong = p;
+			voxels[idx].exist = true;
+			pieces[p].voxelsi.push_back(idx);
+			pieces[p].volume++;
+		}
+	}
+	if (printdebug) { printf("cal pn  - ");  toc();}
+	tic();
+	#pragma omp parallel for
+	for (int p = 0; p < pieces.size(); p++) {
+		Voxel vox = voxels[pieces[p].voxelsi[0]];
+		int idxt = vox.it;
+		for (auto e : tnear[idxt]) {
+			pieces[p].touchinfos.push_back(TouchInfo(e, knifes[e].normal * (vox.hash.getBit(e) ? 1 : -1)));
+		}
+		pieces[p].id = p;
+		pieces[p].it = vox.it;
+	}
+	if (printdebug) { printf("cal ti   - ");  toc(); printf("Generate Piece %d\n", pieces.size());}
+	
+	//*****************************************************************
+	tic();
+	#pragma omp parallel for
+	for (int p = 0; p < pieces.size(); p++) {
+		topo.calTouchBound(pieces[p]);
+	}
+	if (printdebug) { printf("cal bound- "); toc(); }
+}
+
 float Utility::genVoxelByKnife() {
 	voxels = std::vector<Voxel>(nx*ny*nz);
 	//***************************************************************
@@ -878,7 +1075,7 @@ float Utility::genVoxelByKnife() {
 		//std::cout << ratefrom[i] << " ";
 		//std::cout << rateto[i] << std::endl;
 	}
-	printf("cal rate - "); toc();
+	if (printdebug) { printf("cal rate - "); toc(); }
 	//*******************************************************************
 	tic();
 	std::vector<std::vector<int>> tnear(ntx * nty * ntz);
@@ -896,7 +1093,7 @@ float Utility::genVoxelByKnife() {
 			}
 		}
 	}
-	printf("cal near - "); toc();
+	if (printdebug) {printf("cal near - "); toc();}
 	//***************************************************************
 	tic();
 	#pragma omp parallel for
@@ -929,6 +1126,9 @@ float Utility::genVoxelByKnife() {
 					if (curdis < l && ratefrom[i]<rate && rate<rateto[i]) {
 						voxels[idx].touchid.insert(i);
 					}
+					if (curdis == 0) {
+						voxels[idx].immo = true;
+					}
 				}
 				voxels[idx].hash.assign(bits);
 				
@@ -942,7 +1142,7 @@ float Utility::genVoxelByKnife() {
 			}
 		}
 	}
-	printf("cal vox  - "); toc();
+	if (printdebug) { printf("cal vox  - "); toc(); }
 	//*******************************************************************
 	tic();
 	#pragma omp parallel for
@@ -969,7 +1169,7 @@ float Utility::genVoxelByKnife() {
 			}
 		}
 	}
-	printf("cal manh - "); toc();
+	if (printdebug) { printf("cal manh - "); toc(); }
 	//*******************************************************************
 	tic();
 	//cal grid touch
@@ -1028,7 +1228,7 @@ float Utility::genVoxelByKnife() {
 			cubeCollideMap[hash4] = cols;
 		}
 	}
-	//mode hash
+	//mod hash
 	#pragma omp parallel for
 	for (int ix = 0; ix < nx; ix++) {
 		for (int iy = 0; iy < ny; iy++) {
@@ -1045,12 +1245,13 @@ float Utility::genVoxelByKnife() {
 			}
 		}
 	}
-	printf("mod hash - "); toc();
+	if (printdebug) { printf("mod hash - "); toc(); }
 	//*******************************************************************
 	supervoxels = std::vector<std::vector<int>>(ntx * nty * ntz);
 	supervoxeltouch = std::vector<bool>(ntx * nty * ntz, false);
 	for (int idxt = 0; idxt < supervoxeltouch.size(); idxt++) supervoxeltouch[idxt] = (tis[idxt].size() == 0);
 	//************************************************************************************
+	//cal piece dif in a supervoxel 
 	tic();
 	std::vector<std::map<Hash, int>> superpieces(ntx * nty * ntz);
 	for (int ix = 0; ix < nx; ix++) {
@@ -1066,7 +1267,9 @@ float Utility::genVoxelByKnife() {
 			}
 		}
 	}
-	printf("cal sup  - "); toc();
+	if (printdebug) { printf("cal sup  - "); toc(); }
+	//************************************************************************************
+	Group group; group.initAva();topo.avalist = group.avalist;
 	//************************************************************************************
 	int cal = 0;
 	for (int i = 0; i < superpieces.size(); i++) {
@@ -1164,7 +1367,7 @@ void Utility::genPiece_voxel() {
 	//************************************************************************************
 	tic(); 
 	voxelDirSeen();
-	printf("cal seen - "); toc();
+	if (printdebug) { printf("cal seen - "); toc(); }
 	//genPiece_voxel_bfs();return;
 	//************************************************************************************
 	bool onlymode = true;
@@ -1208,13 +1411,13 @@ void Utility::genPiece_voxel() {
 		pieces[p].it = voxels[pieces[p].voxelsi[0]].it;
 		supervoxels[pieces[p].it].push_back(p);
 	}
-	printf("Generate Piece %d\n", pieces.size());
+	if (printdebug) { printf("Generate Piece %d\n", pieces.size()); }
 	tic();
 	#pragma omp parallel for
 	for (int p = 0; p < pieces.size(); p++) {
 		topo.calTouchBound(pieces[p]);
 	}
-	printf("cal bound- "); toc();
+	if (printdebug) { printf("cal bound- "); toc(); }
 	//************************************************************************************
 	for(int i=0;i<pieces.size();i++){
 		pieces[i].max = Vector3(FLT_MIN, FLT_MIN, FLT_MIN), pieces[i].min = Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -1227,7 +1430,7 @@ void Utility::genPiece_voxel() {
 			pieces[i].min.z = std::min(pieces[i].min.z, voxels[v].pos.z);
 		}
 	}
-	printf("cal max- "); toc();
+	if (printdebug) { printf("cal max- "); toc(); }
 	//************************************************************************************
 	/*
 	int mapcnt = 0;
@@ -1339,9 +1542,7 @@ void Utility::genPiece() {
 
 void Utility::initGroup() {//assume piece.id == group.id
 	Group group;group.initAva();
-	topo.avalist = group.avalist;
 	groups = std::vector<Group>(pieces.size());
-	group.initAvaLev();
 	groupIdxMap = std::vector<int>(groups.size());
 	idexist = std::vector<bool>(groups.size(), true);
 	groupidcnt = pieces.size();
@@ -1352,13 +1553,30 @@ void Utility::initGroup() {//assume piece.id == group.id
 		//topo.calTouch(pieces[i]);
 		appendPiece(groups[i], pieces[i]);
 		groups[i].id = pieces[i].id; // == i
+		groups[i].initAvaLev(topo.maxcol);
 		pieces[i].belong = groups[i].id;
-
 		groupIdxMap[groups[i].id] = i;//groupIdxMap.insert(std::pair<int, int>(groups[i].id, i));
 		initGroupBorde(groups[i]);
-		//if (i % 1000 == 0)printf("InitGroup %d ~ %d\n", i, i+999);
+		if (colmode) {
+			std::set<int> ids; ids.insert(i); calFarContact(groups[i], ids);
+		}
+		//****************************
+		int tar = i;
+		if (groups[tar].volume < 0) {
+			if(printdebug)printf("Small Volume : %f\n", groups[tar].volume);
+			for (int i = 0; i < groups[tar].pieces.size(); i++) {
+				for (int j = 0; j < pieces[groups[tar].pieces[i]].voxelsi.size(); j++) {
+					int idx = pieces[groups[tar].pieces[i]].voxelsi[j];
+					voxels[idx].removed = true;
+				}
+				pieces[groups[tar].pieces[i]].removed = true;
+			}
+			idexist[groups[tar].id] = false;
+			groups[tar].removed = true;
+		}
+		//****************************
 	}
-	printf("InitGroup %d\n", groups.size());
+	if (printdebug)printf("InitGroup %d\n", groups.size());
 }
 
 void Utility::initGroupBorde(Group &group) {
@@ -1494,7 +1712,7 @@ void Utility::initLink_voxel() {//assume group.id = piece.id
 			}
 		}
 	}
-	std::cout << "cal pcnt - "; toc();
+	if (printdebug) { std::cout << "cal pcnt - "; toc(); }
 	//***********************************************************************
 	if (checkcavmode) {
 		#pragma omp parallel for
@@ -1527,7 +1745,7 @@ void Utility::initLink_voxel() {//assume group.id = piece.id
 			groups[i].neighbor.insert(groups[j].id);
 		}
 	}
-	std::cout << "cal neig - "; toc();
+	if (printdebug) { std::cout << "cal neig - "; toc(); }
 	//***********************************************************************
 	tic();
 	for (int i = 0; i < groups.size(); i++) {
@@ -1537,7 +1755,7 @@ void Utility::initLink_voxel() {//assume group.id = piece.id
 			groupLink.push(GroupLink(groups[i].id, groups[j].id, calWorth(groups[i], groups[j])));
 		}
 	}
-	std::cout << "cal gplk - "; toc();
+	if (printdebug) { std::cout << "cal gplk - "; toc(); }
 }
 
 void Utility::MergeGroup(Group& group1, Group& group2) {
@@ -1547,7 +1765,7 @@ void Utility::MergeGroup(Group& group1, Group& group2) {
 	}
 	//checkCav(group, group2);
 
-	//*********************************************//voxels& piece belong
+	//*********************************************//voxels & piece belong
 	for (int i = 0; i < group1.pieces.size(); i++)
 		for (int j = 0; j < pieces[group1.pieces[i]].voxelsi.size(); j++)
 			voxels[pieces[group1.pieces[i]].voxelsi[j]].belong = groupidcnt;
@@ -1601,6 +1819,7 @@ void Utility::MergeGroup(Group& group1, Group& group2) {
 		}
 		groups[id].contactmap[group.id].swap(contact);
 	}
+	
 	//*******************************//use idexist to check, so no need
 	//std::vector<Group> groups_new;
 	//for (int i = 0; i < groups.size(); i++) {
@@ -1614,14 +1833,16 @@ void Utility::MergeGroup(Group& group1, Group& group2) {
 	//groups.swap(groups_new);
 	//groupIdxMap.erase(group1.id);//use idexist to check
 	//groupIdxMap.erase(group2.id);//now group1,2 is not avaliable now
-	//*******************************
-	
+
+	//*********************************************//group coldis
+	if(colmode)appendGroup(group, group2);
+	//*********************************************//others
 	group.trigger = true;
 	groups.push_back(group);
 	groupIdxMap.push_back((int)(groups.size() - 1));//groupIdxMap.insert(std::pair<int, int>(group.id, (int)(groups.size() - 1)));
 	//purneVoxel(group);
 	
-	std::cout << "New Neighbor number : " << group.neighbor.size() << std::endl;
+	if(printdebug_l2)std::cout << "New Neighbor number : " << group.neighbor.size() << std::endl;
 	for (auto id : group.neighbor) {
 		groups[groupIdxMap[id]].neighbor.insert(group.id);
 		Worth worth = calWorth(group, groups[groupIdxMap[id]]);
@@ -1673,55 +1894,124 @@ void Utility::checkCav(Group& group, Group& group2) {
 }
 
 void Utility::collectCav(Group& group) {
-	for(int ix=0;ix<nx;ix++)for(int iy=0;iy<ny;iy++){
-		int ixy = ix * ny + iy;
-		for (auto iz : group.downplane[ixy]) group.downvoxels.push_back(ixy * nz + iz);
-		for (auto iz : group.upplane[ixy]) group.upvoxels.push_back(ixy * nz + iz);
+	if (!quickcheckcav) {
+		for (int ix = 0; ix < nx; ix++)for (int iy = 0; iy < ny; iy++) {
+			int ixy = ix * ny + iy;
+			for (auto iz : group.downplane[ixy]) group.downvoxels.push_back(ixy * nz + iz);
+			for (auto iz : group.upplane[ixy]) group.upvoxels.push_back(ixy * nz + iz);
+		}
+	}
+	else {
+	
 	}
 }
 
-void Utility::checkCav(Group& group, Piece& piece) {//only used for initial
-	if (group.downplane.size() == 0) group.downplane = std::vector<std::set<int>>(nx * ny, std::set<int>());
-	if (group.upplane.size() == 0) group.upplane = std::vector<std::set<int>>(nx * ny, std::set<int>());
-	std::set<int> newixy;
-	for (auto i : piece.downvoxels) {
-		int ix, iy, iz; voxels[i].getXYZ(ix, iy, iz);
-		int ixy = ix * ny + iy;
-		newixy.insert(ixy);
-		group.downplane[ixy].insert(iz);
-	}
-	for (auto i : piece.upvoxels) {
-		int ix, iy, iz; voxels[i].getXYZ(ix, iy, iz);
-		int ixy = ix * ny + iy;
-		newixy.insert(ixy);
-		group.upplane[ixy].insert(iz);
-	}
-	for (auto ixy : newixy) {
-		std::set<int> downremove;
-		std::set<int> upremove;
-		for (auto a : group.downplane[ixy]) {
-			for (auto b : group.upplane[ixy]) {
-				if (a == b + 1) {
-					downremove.insert(a);
-					upremove.insert(b);
+void Utility::checkCav(Group& group) {
+	if (!quickcheckcav) {
+
+	} else{
+		for(auto set : group.ztmap){
+			if (set.size() <= 1)continue;
+			std::vector<int> exist(ntz, 0);
+			for (auto itzmap : set) {
+				exist[itzmap.first] = itzmap.second;
+			}
+			int es = exist.size();
+			int upnum = 0;
+			int downnum = 0;
+			int vlim = 100;
+			int cubv = stx*sty*stz;
+
+			int cur = 0;
+			bool dec = false;
+			for (int i = 0; i < es - 1; i++) {
+				if (!dec) {
+					if (cur > exist[i])dec = true;
+					cur = exist[i];
 				}
+				else {
+					if (cur < exist[i]) {
+						dec = false;
+						downnum++;
+					}
+					cur = exist[i];
+				}
+			}
+			cur = 0;
+			dec = false;
+			for (int i = es - 1; i > 0; i--) {
+				if (!dec) {
+					if (cur > exist[i])dec = true;
+					cur = exist[i];
+				}
+				else {
+					if (cur < exist[i]) {
+						dec = false;
+						upnum++;
+					}
+					cur = exist[i];
+				}
+			}
+			if (downnum >= 1 || upnum >= 1) {
+				group.zcav = true;
+				return;
 			}
 		}
-		for (auto r : downremove) group.downplane[ixy].erase(r);
-		for (auto r : upremove) group.upplane[ixy].erase(r);
 	}
-	for (auto ixy : newixy) {
-		if (group.downplane[ixy].size() > 1 || group.upplane[ixy].size() > 1)group.zcav = true;
-		/*
-		for (auto a : group.downplane[ixy]) {
-			for (auto b : group.upplane[ixy]) {
-				if (a > b) {
-					group.zcav = true;
-				}
+}
+
+void Utility::checkCav(Group& group, Piece& piece) {
+	if (!quickcheckcav) {
+		if (group.downplane.size() == 0) group.downplane = std::vector<std::set<int>>(nx * ny, std::set<int>());
+		if (group.upplane.size() == 0) group.upplane = std::vector<std::set<int>>(nx * ny, std::set<int>());
+		std::set<int> newixy;
+		for (auto i : piece.downvoxels) {
+			int ix, iy, iz; voxels[i].getXYZ(ix, iy, iz);
+			int ixy = ix * ny + iy;
+			newixy.insert(ixy);
+			group.downplane[ixy].insert(iz);
+		}
+		for (auto i : piece.upvoxels) {
+			int ix, iy, iz; voxels[i].getXYZ(ix, iy, iz);
+			int ixy = ix * ny + iy;
+			newixy.insert(ixy);
+			group.upplane[ixy].insert(iz);
+		}
+		for (auto ixy : newixy) {
+			std::set<int> downremove;
+			std::set<int> upremove;
+			for (auto a : group.downplane[ixy]) {
+				for (auto b : group.upplane[ixy]) {
+					if (a == b + 1) {
+						downremove.insert(a);
+						upremove.insert(b);
+					}
 				}
 			}
-		*/
+			for (auto r : downremove) group.downplane[ixy].erase(r);
+			for (auto r : upremove) group.upplane[ixy].erase(r);
+		}
+		for (auto ixy : newixy) {//Big Problem!, group will be ok while piece may not
+			if (group.downplane[ixy].size() > 1 || group.upplane[ixy].size() > 1)group.zcav = true;
+			/*
+			for (auto a : group.downplane[ixy]) {
+			for (auto b : group.upplane[ixy]) {
+			if (a > b) {
+			group.zcav = true;
+			}
+			}
+			}
+			*/
+		}
 	}
+	else {
+		if (group.ztmap.size() == 0) group.ztmap = std::vector<std::map<int, int>>(ntx * nty, std::map<int, int>());
+		int itx, ity, itz; voxels[piece.voxelsi[0]].getTXYZ(itx, ity, itz);
+		int itxy = itx * nty + ity;
+		if (group.ztmap[itxy].count(itz) == 0)group.ztmap[itxy][itz] = 0;
+		group.ztmap[itxy][itz]+=piece.volume;
+	}
+	
 }
 
 void Utility::appendPiece(Group& group, Piece& piece){
@@ -1736,7 +2026,30 @@ void Utility::appendPiece(Group& group, Piece& piece){
 	group.min.y = std::min(piece.min.y, group.min.y);
 	group.min.z = std::min(piece.min.z, group.min.z);
 	//******************************************************
+	group.idxts.insert(voxels[piece.voxelsi[0]].it);
+	//******************************************************
 	if(checkcavmode)checkCav(group, piece);
+}
+
+void Utility::appendGroup(Group& group, Group& group2) {
+	for (int mode = 0; mode < 6; mode++) {
+		for (auto pair : group2.idxtcoldis[mode]) {
+			std::vector<int> coldis;
+			if (group.idxtcoldis[mode].count(pair.first) == 0) {
+				group.idxtcoldis[mode][pair.first] = pair.second;
+			}
+			else {
+				/*
+				coldis = group.idxtcoldis[mode][pair.first];
+				for (int i = 0; i < coldis.size(); i++) {
+					coldis[i] = std::min(coldis[i], pair.second[i]);
+				}
+				group.idxtcoldis[mode][pair.first].swap(coldis);
+				*/
+				group.idxtcoldis[mode].erase(pair.first);
+			}
+		}
+	}
 }
 
 void Utility::calBound() {
@@ -1752,7 +2065,7 @@ void Utility::calBound() {
 	}
 	float radii = topo.radii;
 	if (FILE *file = fopen("boundinfo.txt", "r")) {
-		std::cout << "Read Bound From File......" << std::endl;
+		if(printdebug)std::cout << "Read Bound From File......" << std::endl;
 		fscanf(file, "%f %f %f", &ld.x, &ld.y, &ld.z);
 		fscanf(file, "%f %f %f", &ru.x, &ru.y, &ru.z);
 		fscanf(file, "%d %d %d", &stx, &sty, &stz);
@@ -1782,8 +2095,15 @@ void Utility::calBound() {
 		ru += tune / 2;
 		ld -= tune / 2;
 	}
-	std::cout << ld << std::endl;
-	std::cout << ru << std::endl;
+	//********************************
+	voxels = std::vector<Voxel>(nx*ny*nz);
+	tnear = std::vector<std::vector<int>>(ntx * nty * ntz);
+	//********************************
+	topo.maxcol = std::max(nx, std::max(ny, nz));
+	if (printdebug) {
+		std::cout << ld << std::endl;
+		std::cout << ru << std::endl;
+	}
 	//********************************
 	if (manhmode) {
 		ntx = 1;
@@ -1792,7 +2112,7 @@ void Utility::calBound() {
 		stx = nx;
 		sty = ny;
 		stz = nz;
-	}
+	}	
 }
 
 void Utility::optimize() {
@@ -1811,8 +2131,27 @@ void Utility::optimize() {
 		//std::cout << calWorth(groups[groups.size() - 1]) << std::endl;
 
 		cnt--;
-		std::cout << "Group number left : " << cnt << std::endl;
+		if(printdebug_l2)std::cout << "Group number left : " << cnt << std::endl;
 		if (cnt <= 1)break;
+	}
+}
+
+void Utility::removeGroup(int tar) {
+	if(printdebug)std::cout << "---------- Remove " << tar << std::endl;
+	//************
+	for (int i = 0; i < groups[tar].pieces.size(); i++) {
+		for (int j = 0; j < pieces[groups[tar].pieces[i]].voxelsi.size(); j++) {
+			int idx = pieces[groups[tar].pieces[i]].voxelsi[j];
+			voxels[idx].removed = true;
+		}
+		pieces[groups[tar].pieces[i]].removed = true;
+	}
+	idexist[groups[tar].id] = false;
+	groups[tar].removed = true;
+	//************
+	for (int i = 0; i < groups.size(); i++) {
+		if(groups[i].idxtcoldis.size()>0)
+			groups[i].idxtcoldis.swap(std::vector<std::map<int, std::vector<int>>>(6));
 	}
 }
 
@@ -1835,6 +2174,7 @@ void Utility::iterate() {
 			for (auto p : groups[i].pieces)maxz = std::max(voxels[pieces[p].voxelsi[0]].itz, maxz);
 			//if (contact[5] > 0) contactarea = 0;
 			Worth myworth;
+			myworth.val.push_back(groups[i].maxDirDis);
 			myworth.val.push_back(contactarea);
 			//myworth.val.push_back(maxz);
 			//myworth.val.push_back(-minz);
@@ -1846,21 +2186,19 @@ void Utility::iterate() {
 		}
 		int tar = maxi;
 		if (tar == -1) break;
-		//*****************************************************************************
-		std::cout << "---------- Remove "<< tar <<", Area : " << maxmyworth.val[0] << std::endl;
-		for (int i = 0; i < groups[tar].pieces.size(); i++) {
-			for (int j = 0; j < pieces[groups[tar].pieces[i]].voxelsi.size(); j++) {
-				int idx = pieces[groups[tar].pieces[i]].voxelsi[j];
-				voxels[idx].removed = true;
-			}
-			pieces[groups[tar].pieces[i]].removed = true;
+		//*******************
+		if (colmode) {
+			std::set<int> gid; gid.insert(groups[tar].id);
+			std::vector<int> coldis = calFarContact(groups[tar], gid);
+			topo.applyColdis(groups[tar], coldis);
 		}
-		idexist[groups[tar].id] = false;
-		groups[groups[tar].id].removed = true;
+		//*******************
+		removeGroup(tar);
 		if (groups[tar].volume > contlim) {
 			groups_final.push_back(tar);
 			finalgroupset.insert(tar);
 			purneAvaByNei(tar);
+			//printf("%d %d %d %d %d %d\n", groups[tar].avalevel[0], groups[tar].avalevel[1], groups[tar].avalevel[2], groups[tar].avalevel[3], groups[tar].avalevel[4], groups[tar].avalevel[5]);
 		}
 		//*****************************************************************************
 		std::priority_queue<GroupLink> groupLink_;
@@ -1917,7 +2255,7 @@ void Utility::recalAssem() {
 		for (int i = 0; i < groups.size(); i++) {
 			if (!idexist[groups[i].id])continue;
 			if (groups[i].removed)continue;
-			if (calContact(groups[i])[5] > colthre) continue;
+			//if (calContact(groups[i])[5] > colthre) continue;
 			int curminz = INT_MAX, curmaxz = INT_MIN;
 			for (auto p : groups[i].pieces) {
 				for (auto v : pieces[p].voxelsi) {
@@ -1926,6 +2264,8 @@ void Utility::recalAssem() {
 				}
 			}
 			Worth curworth;
+			curworth.val.push_back(groups[i].volume > 2000 ? 1 : 0);//???
+			curworth.val.push_back(-calContact(groups[i])[5]);
 			curworth.val.push_back(curmaxz);
 			curworth.val.push_back(curminz);
 			curworth.val.push_back(-groups[i].volume);
@@ -1935,7 +2275,7 @@ void Utility::recalAssem() {
 			}
 		}
 		if (mini == -1) break;
-		std::cout << "---------- Assem " << mini << " zup : " << worth.val[0] << " zdo : " << worth.val[1] << std::endl;
+		if (printdebug)std::cout << "---------- Assem " << mini << " zup : " << worth.val[0] << " zdo : " << worth.val[1] << std::endl;
 		for (int i = 0; i < groups[mini].pieces.size(); i++) {
 			for (int j = 0; j < pieces[groups[mini].pieces[i]].voxelsi.size(); j++) {
 				int idx = pieces[groups[mini].pieces[i]].voxelsi[j];
@@ -1951,32 +2291,41 @@ void Utility::recalAssem() {
 
 void Utility::noopt() {
 	while (true) {
-		int maxvolume = 0;
+		Worth maxmyworth;
 		int maxi = -1;
 		for (int i = 0; i < groups.size(); i++) {
 			if (!idexist[groups[i].id])continue;
 			if (groups[i].removed)continue;
 			Worth worth = calWorth(groups[i]);
 			if (worth.val[0] == 0)continue;
-			if (maxvolume < groups[i].volume) {
-				maxvolume = groups[i].volume;
+			Worth myworth;
+			myworth.val.push_back(groups[i].maxDirDis);
+			myworth.val.push_back(groups[i].volume);
+			if (maxi == -1 || myworth > maxmyworth) {
+				maxmyworth = myworth;
 				maxi = i;
 			}
 		}
 		if (maxi == -1) break;
-		std::cout << "---------- Remove " << maxi << ", volume : " << maxvolume << std::endl;
-		for (int i = 0; i < groups[maxi].pieces.size(); i++) {
-			for (int j = 0; j < pieces[groups[maxi].pieces[i]].voxelsi.size(); j++) {
-				int idx = pieces[groups[maxi].pieces[i]].voxelsi[j];
-				voxels[idx].removed = true;
-			}
-			pieces[groups[maxi].pieces[i]].removed = true;
+		if (printdebug)std::cout << "---------- Remove " << maxi << ", volume : " << maxmyworth.val[1] << std::endl;
+		//*******************
+		if (colmode) {
+			std::set<int> gid; gid.insert(groups[maxi].id);
+			std::vector<int> coldis = calFarContact(groups[maxi], gid);
+			topo.applyColdis(groups[maxi], coldis);
 		}
-		idexist[groups[maxi].id] = false;
-		groups[groups[maxi].id].removed = true;
-		groups_final.push_back(maxi);
-		finalgroupset.insert(maxi);
-		purneAvaByNei(maxi);
+		//*******************
+		removeGroup(maxi);
+		//*******************
+		if (groups[maxi].volume > contlim) {
+			groups_final.push_back(maxi);
+			finalgroupset.insert(maxi);
+			purneAvaByNei(maxi);
+		}
+		if (groups[maxi].volume < 50) {
+			if (printdebug)printf("%d\n", groups[maxi].volume);
+		}
+
 		//std::cout << "           Ava    " << groups[maxi].avanum << std::endl;std::endl;
 	}
 	//*********************************************************************
@@ -2181,8 +2530,18 @@ Worth Utility::calWorth(Group& group1, Group& group2) {
 	int oriavanum = group.avanum;
 	std::set<int> ids; ids.insert(group1.id); ids.insert(group2.id);
 	//topo.boundAva(group, genBound(calContact(group, ids)));
+	//******************************************
+	appendGroup(group, group2);
+	    
+	int maxcoldis = INT_MIN;
+	if (colmode && eachcolmode) {
+		std::vector<int> coldis = calFarContact(group, ids);
+		for (auto dis : coldis)maxcoldis = std::max(maxcoldis, dis);
+	}
+	//******************************************
 	std::vector<std::set<int>> contactgroup;
 	topo.boundAva(group, genBound(calBothContact(group1, group2, contactgroup)));
+	checkCav(group);
 	bool cav = false;
 	cav = group.zcav;
 	//******************************************
@@ -2193,7 +2552,6 @@ Worth Utility::calWorth(Group& group1, Group& group2) {
 	float ctrl = 1;
 	if (contact[4] > contlim || contact[5] > contlim) ctrl = 0;
 	//******************************************
-
 	/*
 	std::vector<int> contact2 = calContact(group, ids);
 	std::vector<int> contact1 = calBothContact(group1, group2);
@@ -2205,8 +2563,8 @@ Worth Utility::calWorth(Group& group1, Group& group2) {
 	}
 	*/
 	//****************************************************************
-	//topo.boundFarAva(group, genBound(calFarContact(group, ids)));
-	//topo.boundAva(group, genBound(group, ids));
+	//topo.boundFarAva(group, genBound(calFarContact(group, ids)));//has been moded
+	//topo.boundAva(group, genBound(group, ids)); 
 	//****************************************************************
 	/*
 	Hash hash; for (int i = 0; i < 6; i++)hash.addHash(true);
@@ -2250,12 +2608,13 @@ Worth Utility::calWorth(Group& group1, Group& group2) {
 		val.push_back(group.avanum);
 		//val.push_back(-iscube);
 		val.push_back(contactface);
-		val.push_back(ctrl);
+		//val.push_back(ctrl);
 		val.push_back(maxarea - volume);
 		//val.push_back(rate);
 		//val.push_back(-lz);
 		val.push_back(contactarea);
 		//val.push_back(-maxrate);
+		val.push_back(maxcoldis);//piority?????
 	}
 	//bound problem need to solve!!(完全平行於正交角時)
 	return Worth(val);
@@ -2295,7 +2654,7 @@ Worth Utility::calWorth(Group& group1) {
 	//topo.boundAva(group, genBound(calContact(group, ids)));
 	topo.boundAva(group, genBound(calContact(group)));
 	
-	//topo.boundFarAva(group, genBound(calFarContact(group, ids)));
+	//topo.boundFarAva(group, genBound(calFarContact(group, ids)));//has been moded
 	//topo.boundAva(group, genBound(group, ids));
 	std::vector<float> val;
 	val.push_back(group.avanum);
@@ -2498,90 +2857,254 @@ std::vector<int> Utility::calContact(Group & group, std::set<int> ids) {
 }
 
 std::vector<int> Utility::calFarContact(Group & group, std::set<int> ids) {
-	std::vector<int> contact(6, 0);
-	std::set<int> idxts;
-	for (int i = 0; i < group.pieces.size(); i++) {
-		idxts.insert(pieces[group.pieces[i]].it);
+	int thre = 100;
+	std::vector<int> contact(6, topo.maxcol);
+	//for (int i = 0; i < 6; i++)if (group.avaset.count(i) == 0)contact[i] = 0;//only for simpmode
+	int attemp = 2;
+	if (attemp == 0) {
+		for (int mode = 0; mode < 6; mode++) {
+			if (group.avaset.count(mode) == 0) {contact[mode] = 0;continue;}
+			int n, w1, w2;
+			Vector3 dir;
+			if (mode / 2 == 0) { n = nx; w1 = ny; w2 = nz; dir = Vector3(-1, 0, 0); }
+			if (mode / 2 == 1) { n = ny; w1 = nx; w2 = nz; dir = Vector3(0, -1, 0); }
+			if (mode / 2 == 2) { n = nz; w1 = nx; w2 = ny; dir = Vector3(0, 0, -1); }
+			if (mode % 2 == 1) dir *= -1;
+			std::vector<int> pixel(w1*w2); for (int j = 0; j < pixel.size(); j++) pixel[j] = -1;
+			int mode_ = (mode / 2 * 2) + ((mode % 2 + 1) % 2);
+			bool bk = false;
+			std::vector<int> collist(n, 0);
+			for (int i = 0; i < n; i++) {
+				for (int j = 0; j < w1; j++) {
+					for (int k = 0; k < w2; k++) {
+						int idx = voxelId(i, j, k, mode_);
+						bool same = ids.count(voxels[idx].belong) > 0;
+						int dis = i - pixel[j * w2 + k];
+						if (voxels[idx].exist && !voxels[idx].removed) {
+							if (same)if(!voxels[idx].immo) pixel[j * w2 + k] = i;
+							else if (pixel[j * w2 + k] >= 0) { collist[dis]++;}
+						}
+						if (pixel[j * w2 + k] >= 0 && !same && voxels[idx].immo) {
+							collist[dis]+=10;
+						}
+					}
+				}
+			}
+			for (int i = 0; i < n; i++) {
+				if (collist[i] > thre) {
+					contact[mode] = i;
+					if (printdebug)printf("%d---%d ", i, collist[i]);
+					break;
+				}
+			}
+		}
+		return contact;
 	}
-	for (auto idxt : idxts) {
-		int itx = idxt / (nty * ntz);
-		int ity = idxt / ntz % nty;
-		int itz = idxt % ntz;
-		for (int x = itx; x >= 0; x--) {
-			int idxt = x * nty * ntz + ity * ntz + itz;
-			if(supervoxeltouch[idxt])contact[0] = itx - x;
-			else for (auto p : supervoxels[idxt]) {
-				int idx = pieces[p].voxelsi[0];
-				if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
-					contact[0] = itx - x;
-					break;
+	else if(attemp == 1){
+		std::set<int> idxts = group.idxts;
+		//for (int i = 0; i < group.pieces.size(); i++) if (pieces[group.pieces[i]].volume > thre)idxts.insert(pieces[group.pieces[i]].it);
+		for (auto idxt_cur : idxts) {
+			int itx = idxt_cur / (nty * ntz);
+			int ity = idxt_cur / ntz % nty;
+			int itz = idxt_cur % ntz;
+			for (int x = itx - 1; x >= 0; x--) {
+				int dis = itx - x;
+				if (dis >= contact[0])break;
+				int idxt = x * nty * ntz + ity * ntz + itz;
+				if (idxts.count(idxt) > 0)break;
+				bool idxtbelong = false;
+				for (auto p : supervoxels[idxt]) {
+					if (pieces[p].volume <= thre)continue;
+					int idx = pieces[p].voxelsi[0];
+					if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+						idxtbelong = true;
+						contact[0] = dis;
+						break;
+					}
 				}
+				//if (!idxtbelong && supervoxeltouch[idxt])contact[0] = dis;
+				if (!idxtbelong)contact[0] = dis;
+				if (contact[0] > 0 && contact[0] < topo.maxcol)break;
 			}
-			if (contact[0])break;
-		}
-		for (int x = itx; x < ntx; x++) {
-			int idxt = x * nty * ntz + ity * ntz + itz;
-			if (supervoxeltouch[idxt])contact[1] = x - itx;
-			else for (auto p : supervoxels[idxt]) {
-				int idx = pieces[p].voxelsi[0];
-				if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
-					contact[1] = x - itx;
-					break;
+			for (int x = itx + 1; x < ntx; x++) {
+				int dis = x - itx;
+				if (dis >= contact[1])break;
+				int idxt = x * nty * ntz + ity * ntz + itz;
+				if (idxts.count(idxt) > 0)break;
+				bool idxtbelong = false;
+				for (auto p : supervoxels[idxt]) {
+					if (pieces[p].volume <= thre)continue;
+					int idx = pieces[p].voxelsi[0];
+					if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+						idxtbelong = true;
+						contact[1] = dis;
+						break;
+					}
 				}
+				//if (!idxtbelong && supervoxeltouch[idxt])contact[1] = dis;
+				if (!idxtbelong)contact[1] = dis;
+				if (contact[1] > 0 && contact[1] < topo.maxcol)break;
 			}
-			if (contact[1])break;
-		}
-		for (int y = ity; y >= 0; y--) {
-			int idxt = itx * nty * ntz + y * ntz + itz;
-			if (supervoxeltouch[idxt])contact[2] = ity - y;
-			else for (auto p : supervoxels[idxt]) {
-				int idx = pieces[p].voxelsi[0];
-				if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
-					contact[2] = ity - y;
-					break;
+			for (int y = ity - 1; y >= 0; y--) {
+				int dis = ity - y;
+				if (dis >= contact[2])break;
+				int idxt = itx * nty * ntz + y * ntz + itz;
+				if (idxts.count(idxt) > 0)break;
+				bool idxtbelong = false;
+				for (auto p : supervoxels[idxt]) {
+					if (pieces[p].volume <= thre)continue;
+					int idx = pieces[p].voxelsi[0];
+					if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+						idxtbelong = true;
+						contact[2] = dis;
+						break;
+					}
 				}
+				//if (!idxtbelong && supervoxeltouch[idxt])contact[2] = dis;
+				if (!idxtbelong)contact[2] = dis;
+				if (contact[2] > 0 && contact[2] < topo.maxcol)break;
 			}
-			if (contact[2])break;
-		}
-		for (int y = ity; y < nty; y++) {
-			int idxt = itx * nty * ntz + y * ntz + itz;
-			if (supervoxeltouch[idxt])contact[2] = y - ity;
-			else for (auto p : supervoxels[idxt]) {
-				int idx = pieces[p].voxelsi[0];
-				if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
-					contact[2] = y - ity;
-					break;
+			for (int y = ity + 1; y < nty; y++) {
+				int dis = y - ity;
+				if (dis >= contact[3])break;
+				int idxt = itx * nty * ntz + y * ntz + itz;
+				if (idxts.count(idxt) > 0)break;
+				bool idxtbelong = false;
+				for (auto p : supervoxels[idxt]) {
+					if (pieces[p].volume <= thre)continue;
+					int idx = pieces[p].voxelsi[0];
+					if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+						idxtbelong = true;
+						contact[3] = dis;
+						break;
+					}
 				}
+				//if (!idxtbelong && supervoxeltouch[idxt])contact[3] = dis;
+				if (!idxtbelong)contact[3] = dis;
+				if (contact[3] > 0 && contact[3] < topo.maxcol)break;
 			}
-			if (contact[3])break;
-		}
-		for (int z = itz; z >= 0; z--) {
-			int idxt = itx * nty * ntz + ity * ntz + z;
-			if (supervoxeltouch[idxt])contact[4] = itz - z;
-			else for (auto p : supervoxels[idxt]) {
-				int idx = pieces[p].voxelsi[0];
-				if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
-					contact[4] = itz - z;
-					break;
+			for (int z = itz - 1; z >= 0; z--) {
+				int dis = itz - z;
+				if (dis >= contact[4])break;
+				int idxt = itx * nty * ntz + ity * ntz + z;
+				if (idxts.count(idxt) > 0)break;
+				bool idxtbelong = false;
+				for (auto p : supervoxels[idxt]) {
+					if (pieces[p].volume <= thre)continue;
+					int idx = pieces[p].voxelsi[0];
+					if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+						idxtbelong = true;
+						contact[4] = dis;
+						break;
+					}
 				}
+				//if (!idxtbelong && supervoxeltouch[idxt])contact[4] = dis;
+				if (!idxtbelong)contact[4] = dis;
+				if (contact[4] > 0 && contact[4] < topo.maxcol)break;
 			}
-			if (contact[4])break;
-		}
-		for (int z = itz; z < ntz; z++) {
-			int idxt = itx * nty * ntz + ity * ntz + z;
-			if (supervoxeltouch[idxt])contact[5] = z - itz;
-			else for (auto p : supervoxels[idxt]) {
-				int idx = pieces[p].voxelsi[0];
-				if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
-					contact[5] = z - itz;
-					break;
+			for (int z = itz + 1; z < ntz; z++) {
+				int dis = z - itz;
+				if (z - itz >= contact[5])break;
+				int idxt = itx * nty * ntz + ity * ntz + z;
+				bool idxtbelong = false;
+				for (auto p : supervoxels[idxt]) {
+					if (pieces[p].volume <= thre)continue;
+					int idx = pieces[p].voxelsi[0];
+					if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+						idxtbelong = true;
+						contact[5] = dis;
+						break;
+					}
 				}
+				//if (!idxtbelong && supervoxeltouch[idxt])contact[5] = dis;
+				if (!idxtbelong)contact[5] = dis;
+				if (contact[5] > 0 && contact[5] < topo.maxcol)break;
 			}
-			if (contact[5])break;
 		}
+		return contact;
 	}
-	return contact;
+	else {
+		std::set<int> idxts;
+		for (int i = 0; i < group.pieces.size(); i++) {
+			if (pieces[group.pieces[i]].volume > thre)idxts.insert(pieces[group.pieces[i]].it);
+		}
+		for (int mode = 0; mode < 6; mode++) {
+			if (group.avaset.count(mode) == 0) { contact[mode] = 0; continue; }
+			int n, w1, w2, nt, wt1, wt2;
+			Vector3 dir;
+			if (mode / 2 == 0) { n = nx; w1 = ny; w2 = nz; nt = stx; wt1 = sty; wt2 = stz; dir = Vector3(-1, 0, 0); }
+			if (mode / 2 == 1) { n = ny; w1 = nx; w2 = nz; nt = sty; wt1 = stx; wt2 = stz; dir = Vector3(0, -1, 0); }
+			if (mode / 2 == 2) { n = nz; w1 = nx; w2 = ny; nt = stz; wt1 = stx; wt2 = sty; dir = Vector3(0, 0, -1); }
+			if (mode % 2 == 1) dir *= -1;
+			std::vector<int> pixel(w1*w2, -1);
+			std::vector<bool> pixeldone(w1*w2, false);
+			int mode_ = (mode / 2 * 2) + ((mode % 2 + 1) % 2);
+			for (auto idxt_cur : idxts) {
+				bool valid = true;
+				//for (auto p : supervoxels[idxt_cur])if(ids.count(pieces[p].belong)==0)valid = false;
+				if (valid && group.idxtcoldis[mode].count(idxt_cur) > 0) continue;
+				std::vector<int> collist_(n, 0);
+				int ti, tj, tk; voxelTId_(ti, tj, tk, mode_, idxt_cur);
+				if (ti+1 < (n/nt) && idxts.count(voxelTId(ti+1, tj, tk, mode_)) > 0) continue;
+				for (int i = ti * nt; i < n; i++) {
+					int idxt = voxelTId(i / nt, tj, tk, mode_);
+					
+					bool jump = true;
+					if (supervoxels[idxt].size() == 1) {
+						if(idxt == idxt_cur){
+							for (int j = tj * wt1; j < tj * wt1 + wt1; j++) for (int k = tk * wt2; k < tk * wt2 + wt2; k++) {
+								pixel[j * w2 + k] = i + nt - 1;
+							}
+						}else{
+							for (auto p : supervoxels[idxt]) {
+								if (pieces[p].volume <= thre)continue;
+								int idx = pieces[p].voxelsi[0];
+								if (voxels[idx].exist && !voxels[idx].removed && ids.count(voxels[idx].belong) == 0) {
+									jump = false;
+								}
+							}
+						}
+						
+					}else jump = false;
+					if (idxt != idxt_cur && jump) { i += nt - 1; continue; }
+					
+					int pixeldonecnt = 0;
+					for (int j = tj * wt1; j < tj * wt1 + wt1; j++) {
+						for (int k = tk * wt2; k < tk * wt2 + wt2; k++) {
+							if (pixeldone[j * w2 + k])continue;
+							int idx = voxelId(i, j, k, mode_);
+							bool same = ids.count(voxels[idx].belong) > 0;
+							int dis = i - pixel[j * w2 + k];
+							if (voxels[idx].exist && !voxels[idx].removed) {
+								if (same)if (!voxels[idx].immo) pixel[j * w2 + k] = i;
+								else if (pixel[j * w2 + k] >= 0) { collist_[dis]++; pixeldone[j * w2 + k] = true; }
+							}
+							if (pixel[j * w2 + k] >= 0 && !same && voxels[idx].immo) { collist_[dis] += 10; pixeldone[j * w2 + k] = true;}
+							if (pixeldone[j * w2 + k])pixeldonecnt++;
+						}
+						if (pixeldonecnt == wt1*wt2)break;
+					}
+					if (pixeldonecnt == wt1*wt2)break;
+				}
+				group.idxtcoldis[mode][idxt_cur] = collist_;
+			}
+			std::vector<int> collist(n, 0);
+			for (auto pair : group.idxtcoldis[mode]) {
+				for (int i = 0; i < n; i++) {
+					collist[i] += pair.second[i];
+				}
+			}
+			for (int i = 0; i < n; i++) {
+				if (collist[i] > thre) {
+					contact[mode] = i;
+					break;
+				}
+			}
+		}
+		return contact;
+	}
 }
+
 //********************************************************
 
 void Utility::outputPiece() {
@@ -2774,7 +3297,7 @@ void Utility::outputGroup_voxel() {
 			}
 		}
 		int ps = poss.size();
-		bool on = false;
+		bool on = true;
 		if (on) {
 			std::ofstream ofs = std::ofstream(filename, std::ios::binary);
 			ofs.write((char*)&ps, sizeof(int));
@@ -2795,19 +3318,76 @@ void Utility::outputGroup_voxel() {
 		Group group = groups[groups_final[i]];
 		Vector3 dir = Vector3(0, 0, 0);
 		if (group.avanum > 0) {
-			for (int j = 0; j < group.avanum; j++)dir += group.ava[j];
-			dir /= group.avanum;
+			
+			//for (int j = 0; j < group.avanum; j++)dir += group.ava[j];
+			//dir /= group.avanum;
 			//fprintf(fp, "%f %f %f\n", dir.x, dir.y, dir.z);
-			int a = group.avanum / 2;
-			fprintf(fp, "%f %f %f\n", group.ava[a].x, group.ava[a].y, group.ava[a].z);
-			printf("%f %f %f\n", dir.x, dir.y, dir.z);
+			//int a = group.avanum / 2;
+			//fprintf(fp, "%f %f %f\n", group.ava[a].x, group.ava[a].y, group.ava[a].z);
+			
+			topo.renewAva(group);
+			if (colmode) {
+				fprintf(fp, "%f %f %f %d\n", group.maxDir.x, group.maxDir.y, group.maxDir.z, group.maxDirDis);
+				printf("%f %f %f : %d\n", group.maxDir.x, group.maxDir.y, group.maxDir.z, group.maxDirDis);
+			}
+			else {
+				int n = group.ava.size() / 2;
+				fprintf(fp, "%f %f %f 0\n", group.ava[n].x, group.ava[n].y, group.ava[n].z);
+				printf("%f %f %f : 0\n", group.ava[n].x, group.ava[n].y, group.ava[n].z);
+			}
 		}
-		else fprintf(fp, "0 0 0\n");
+		else {
+			fprintf(fp, "0 0 0 0\n");
+			printf("0 0 0 0\n");
+		}
 	}
 	for (int i = 0; i < groups_final_assem.size(); i++) {
 		fprintf(fp, "%d\n", cntmap[groups_final_assem[i]]);
 	}
 	fclose(fp);
+}
+
+float Utility::outputEnergy() {
+	int num = groups_final.size();
+	//*****************************
+	float maxlen = topo.maxcol;
+	float coldis = 0;
+	for (int i = 0; i < groups_final.size(); i++) {
+		Group group = groups[groups_final[i]];
+		topo.renewAva(group);
+		if (group.maxDirDis >= maxlen || group.maxDirDis < 0)group.maxDirDis = maxlen;
+		coldis += 1-((float)group.maxDirDis / maxlen);
+	}
+	coldis /= num;
+	//*****************************
+	std::vector<float> volumes;
+	float sum = 0;
+	float max = 0;
+	for (int i = 0; i < groups_final.size(); i++) {
+		Group group = groups[groups_final[i]];
+		volumes.push_back(group.volume);
+		max = std::max(max, group.volume);
+		sum += group.volume;
+	}
+	float stddif = 0;
+	float mean = (sum / max) / num;
+	for (auto vol : volumes) {
+		float rate = vol / max;
+		stddif += (rate - mean)*(rate - mean);
+	}
+	stddif = std::sqrtf(stddif / num);
+	//*****************************
+	energy[0] = (float)num;
+	energy[1] = coldis;
+	energy[2] = stddif;
+	//std::cout << num << " " << coldis << " " << stddif << std::endl;
+	std::cout << energy[0] << " " << energy[1] << " " << energy[2] << std::endl;
+	std::cout << groups[groups_final[groups_final.size() - 1]].volume / (nx*ny*nx) << std::endl;
+	float E = energy[0] + 10 * energy[1] + energy[2];
+	std::cout << E << std::endl;
+	//17.1042
+	//19.9273
+	return E;
 }
 
 void Utility::outputGroup() {

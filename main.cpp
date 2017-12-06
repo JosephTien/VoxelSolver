@@ -6,11 +6,64 @@ int main(int argc, char *argv[]) {
     Utility utility;
 	srand((unsigned)time(NULL));
     if(argc>1){
-		if (strcmp(argv[1], "tune")==0) {
+		if (strcmp(argv[1], "tune&field") == 0) {
+			if (false) {
+				utility.topo.read();
+				utility.topo.genAllKnife();
+				utility.topo.genCapsule();
+				//**********************
+				utility.calBound();
+				utility.genSuperVoxelBlock();
+				utility.topo.geneOpt();
+				utility.topo.outputRotateArg();
+			}
+			//********************************************
+			//********************************************
+			utility.initVar();
 			utility.topo.read();
+			utility.topo.genAllKnife();
+			utility.topo.genCapsule();
+			//**********************
+			utility.calBound();
+			//utility.genVoxelByKnife_autotune();
+
+			utility.genVoxelByKnife();
+			utility.genPiece_voxel();
+			utility.initGroup();
+			utility.initLink_voxel();
+			utility.optimize();
+			utility.iterate();
+			utility.noopt();
+			utility.recalAssem();
+			//**********************
+			//utility.collectLast();
+			utility.genVoxelOutput();
+			utility.outputGroup_voxel();
+			utility.outputZip();
+			utility.outputKnife();
+			utility.outputEnergy();
+			std::cout << "Done" << std::endl;
+		}
+		else if (strcmp(argv[1], "eva") == 0) {
+			utility.topo.read();
+			utility.topo.genAllKnife();
+			utility.topo.genCapsule();
+			utility.calBound();
+			//**********************
+			utility.preview();
+			utility.topo.outputRotateArg();
+		}
+		else if (strcmp(argv[1], "tune")==0) {
+			utility.topo.read();
+			utility.topo.genAllKnife();
+			utility.topo.genCapsule();
+			//**********************
+			utility.calBound();
+			utility.genSuperVoxelBlock();
 			utility.topo.geneOpt();
 			//utility.topo.atomOpt();
 			//utility.topo.beeOpt();
+			//utility.topo.geneOptEnergy();
 			utility.topo.outputRotateArg();
 		}
 		else if (strcmp(argv[1], "less") == 0) {
@@ -34,7 +87,6 @@ int main(int argc, char *argv[]) {
 			utility.topo.genAllKnife();
 			utility.topo.genCapsule();
 			//**********************
-			utility.tic();
 			utility.calBound();
 			//utility.genVoxelByKnife_autotune();
 			utility.genVoxelByKnife();
@@ -52,6 +104,52 @@ int main(int argc, char *argv[]) {
 			utility.outputGroup_voxel();
 			utility.outputZip();
 			utility.outputKnife();
+			utility.outputEnergy();
+			std::cout << "Done" << std::endl;
+		}
+		else if (strcmp(argv[1], "energy") == 0) {
+			utility.topo.read();
+			utility.topo.genCapsule();
+			utility.calBound();
+			//**********************
+			int labeldiv = 15;
+			std::vector<std::vector<float>> labelcost(std::vector<std::vector<float>>(utility.topo.edgenum, std::vector<float>(180/ labeldiv * 3, 0)));
+			utility.topo.angles = std::vector<float>(utility.topo.edgenum, 0);
+			for (int i = 0; i < utility.topo.edgenum; i++) {
+				for (int a = 0; a < 180; a += labeldiv) {
+					utility.topo.angles[i] = a;
+					printf("______________________________________\n");
+					for (int j = 0; j < utility.topo.edgenum; j++) printf("%d ", (int)utility.topo.angles[j]); printf("\n:::::::::: ");
+					utility.topo.regenSplitNorm();
+					utility.topo.genAllKnife();
+					utility.genVoxelByKnife();
+					utility.genPiece_voxel();
+					utility.initGroup();
+					utility.initLink_voxel();
+					utility.optimize();
+					utility.iterate();
+					utility.noopt();
+					utility.recalAssem();
+					utility.outputEnergy();
+					int idx = a / labeldiv;
+					labelcost[i][idx * 3] = utility.energy[0];
+					labelcost[i][idx * 3 + 1] = utility.energy[1];
+					labelcost[i][idx * 3 + 2] = utility.energy[2];
+					utility.initVar();
+				}
+				utility.topo.angles[i] = 0;
+			}
+			FILE* fp = fopen("labelenergy.txt", "w");
+			for (int i = 0; i < utility.topo.edgenum; i++) {
+				for (int a = 0; a < 180; a += labeldiv) {
+					int idx = a / labeldiv;
+					fprintf(fp, "%f ", labelcost[i][idx * 3]);
+					fprintf(fp, "%f ", labelcost[i][idx * 3 + 1]);
+					fprintf(fp, "%f ", labelcost[i][idx * 3 + 2]);
+				}
+				fprintf(fp, "\n");
+			}
+			fclose(fp);
 			std::cout << "Done" << std::endl;
 		}
 		else if (strcmp(argv[1], "dirsearch") == 0) {

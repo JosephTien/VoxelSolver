@@ -76,6 +76,14 @@ public:
 	std::vector<float> angles;
 	std::vector<Capsule> caps;
 	std::vector<Vector3> avalist;
+	std::vector<std::set<int>> tnear;
+	std::vector<std::vector<int>> edgeblock;
+	std::vector<std::vector<float>> labelcost;
+	std::vector<float> ratefrom;
+	std::vector<float> rateto;
+	int labeldiv = 15;
+	int maxcol = 1000;
+	bool printdebug = false;
 	int optMode = 0;
 	const float radii = 5.0f;
 	int verticenum;
@@ -86,6 +94,8 @@ public:
 	void genCapsule();
 	std::vector<Plane> genKnife(std::vector<Vector3> splitNorm, std::vector<int>& knifeIdx);
 	void read();
+	void analysis();
+	void regenSplitNorm();
 	float angleFix(float angle);
 	void fixAngleDistance();
 	Vector3 getEdgeCent(int idx) { return (vertices[edges[idx].ia] + vertices[edges[idx].ib]) / 2; }
@@ -94,9 +104,11 @@ public:
 	float calAngleArgVal(std::vector<float> angles);
 	void calTouch(Piece & piece);
 	void calTouchBound(Piece & piece);
+	void applyColdis(Group &group, std::vector<int> coldis);
+	void renewAva(Group &group);
 	void purneAva(Group &group, Piece &piece);
 	void boundAva(Group &group, std::vector<Vector3>);
-	void boundAva_angles(Group &group, std::vector<Vector3>);
+	//void boundAva_angles(Group &group, std::vector<Vector3>);
 	void boundFarAva(Group &group, std::vector<Vector3>);
 	std::vector<float> genRandomAngles();
 	std::vector<float> genRandomAngles(float from, float to, float lev);
@@ -104,6 +116,7 @@ public:
 	Vector3 genRandomOrgdir();
 	float Topo::calPerAngle(Vector3 norm, Vector3 vec, Vector3 dir);
 	void beeOpt();
+	void geneOptEnergy();
 	void geneOpt();
 	void geneOpt(float from, float to, float lev);
 	void geneOpt(std::vector<bool> pos, float from, float to, float lev);

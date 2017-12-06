@@ -169,6 +169,17 @@ public:
 		}
 		return bits;
 	}
+	Hash assignAll(int hashlen, bool b) {
+		hash = std::vector<unsigned int>(hashlen / partlen + 1);
+		if(!b)for (int i = 0; i < hash.size(); i++)hash[i] = 0x0;
+		else  for (int i = 0; i < hash.size(); i++)hash[i] = 0xffffffff;
+		return *this;
+	}
+	void assign(int i, bool b) {
+		unsigned int mask = 0x1 << (i%partlen);
+		if(b)hash[i / partlen] = hash[i / partlen] | mask;
+		else hash[i / partlen] = hash[i / partlen] & (~mask);
+	}
 	Hash assign(std::vector<bool> &bits) {
 		hashlen = bits.size();
 		hash = std::vector<unsigned int>(bits.size() / partlen + 1);
@@ -338,13 +349,23 @@ public:
 	std::vector<int> avalevel;
 	std::set<int> avaset;
 	std::map<int, std::vector<int>> contactmap;
+	std::vector<std::map<int, std::vector<int>>> idxtcoldis = std::vector<std::map<int, std::vector<int>>>(6);
+	std::vector<int> coldis;
 	std::vector<int> borde;//voxels
-	int avanum=0;
+	std::vector<std::map<int, int>> ztmap;
+	std::set<int> idxts;
+	int avanum = 0;
 	int bordenum = 0;
-	const float plus = 90.0f;
-	const float thre = 60.0f;
+	//const float plus = 90.0f;
+	//const float thre = 60.0f;
+	const float plus = 45.0f;
+	const float thre = 30.0f;
+	const bool simpmode = true;// : utility.colmode
 	bool trigger = false;
 	bool removed = false;
+	Vector3 maxDir;
+	int maxDirDis;
+
 	int id;
 	std::set<int> neighbor;//id
 	std::vector<int> upvoxels;
@@ -355,7 +376,7 @@ public:
 	bool zcav = false;
 	float volume = 0;
 	void initAva();
-	void initAvaLev();
+	void initAvaLev(int maxcol);
 	Mesh getMesh(std::vector<Piece> & pieces);
 	void operator=(const Group& group) {//useless?
 		pieces = group.pieces;
@@ -369,6 +390,7 @@ public:
 		upplane = group.upplane;
 		downplane = group.downplane;
 		//contactmap = group.contactmap;
+		idxtcoldis = group.idxtcoldis;
 	}
 };
 
