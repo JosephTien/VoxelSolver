@@ -70,8 +70,10 @@ public:
 	std::vector<Vector3> splitNorm_ori;
 	std::vector<Plane> knifes;
 	std::vector<int> knifeIdx;//用edge idx 代替表達output的knife
+	std::vector<bool> knifeExist;
 	std::vector<std::set<int>> verticeedge;
 	std::vector<std::set<int>> verticevertice;
+	std::vector<std::vector<bool>> edgeneimap;
 	std::vector<bool> isimpo;
 	std::vector<float> angles;
 	std::vector<Capsule> caps;
@@ -84,6 +86,7 @@ public:
 	int labeldiv = 15;
 	int maxcol = 1000;
 	bool printdebug = false;
+	bool simpKnifeMode = true;
 	int optMode = 0;
 	const float radii = 5.0f;
 	int verticenum;
@@ -100,10 +103,11 @@ public:
 	void fixAngleDistance();
 	Vector3 getEdgeCent(int idx) { return (vertices[edges[idx].ia] + vertices[edges[idx].ib]) / 2; }
 	Vector3 getEdgeVec(int idx) { return (vertices[edges[idx].ib] - vertices[edges[idx].ia]).normalize(); }
+	Vector3 getEdgeVec_(int idx) { return (vertices[edges[idx].ib] - vertices[edges[idx].ia]); }
 	void prepareData();
 	float calAngleArgVal(std::vector<float> angles);
 	void calTouch(Piece & piece);
-	void calTouchBound(Piece & piece);
+	void calTouchBound(Piece & piece, bool flexMode);
 	void applyColdis(Group &group, std::vector<int> coldis);
 	void renewAva(Group &group);
 	void purneAva(Group &group, Piece &piece);

@@ -31,8 +31,10 @@ int main(int argc, char *argv[]) {
 			utility.genPiece_voxel();
 			utility.initGroup();
 			utility.initLink_voxel();
-			utility.optimize();
-			utility.iterate();
+			if (true) {//turn off when special mode
+				utility.optimize();
+				utility.iterate();
+			}
 			utility.noopt();
 			utility.recalAssem();
 			//**********************
@@ -50,6 +52,7 @@ int main(int argc, char *argv[]) {
 			utility.topo.genCapsule();
 			utility.calBound();
 			//**********************
+			utility.topo.analysis();
 			utility.preview();
 			utility.topo.outputRotateArg();
 		}

@@ -353,7 +353,9 @@ public:
 	std::vector<int> coldis;
 	std::vector<int> borde;//voxels
 	std::vector<std::map<int, int>> ztmap;
+	std::map<int, std::set<int>> supervoxels;
 	std::set<int> idxts;
+	//bool isBound[6] = { false ,false ,false ,false ,false ,false };
 	int avanum = 0;
 	int bordenum = 0;
 	//const float plus = 90.0f;

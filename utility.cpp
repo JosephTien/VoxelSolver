@@ -3,7 +3,7 @@
 //*******************************************
 void Utility::voxelBfs() { //將所有touchedge先放入，並一組一組分別長
 	std::set<int> vs;
-	for (int i = 0; i < voxels.size(); i++) vs.insert(i);
+	for (int i = 0; i < voxelsize; i++) vs.insert(i);
 	for (int p = 0;; p++) {
 		if(!voxelBfs(p, vs))break;
 	}
@@ -225,10 +225,10 @@ void Utility::genVoxelSeen() {//將moveable direction塞入hash，有計算linkval
 	nx = (ru.x - ld.x) / l + 1;
 	ny = (ru.y - ld.y) / l + 1;
 	nz = (ru.z - ld.z) / l + 1;
-	voxels = std::vector<Voxel>(nx*ny*nz);
+	voxels = new Voxel[voxelsize];
 	//*******************************************
 	#pragma omp parallel for
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		int ix = i / (ny * nz);
 		int iy = i / nz % ny;
 		int iz = i % nz;
@@ -248,7 +248,7 @@ void Utility::genVoxelSeen() {//將moveable direction塞入hash，有計算linkval
 	}
 	//*******************************************
 	#pragma omp parallel for
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		int idx = i;
 		int ix = voxels[idx].ix;
 		int iy = voxels[idx].iy;
@@ -280,7 +280,7 @@ void Utility::genVoxelSeen() {//將moveable direction塞入hash，有計算linkval
 	}
 	//*******************************************
 	std::set<Hash> hs;
-	for (int i = 0; i < voxels.size(); i++)hs.insert(voxels[i].hash);
+	for (int i = 0; i < voxelsize; i++)hs.insert(voxels[i].hash);
 	std::cout << "Label number : " << hs.size() << std::endl;
 	//*******************************************
 	toc();
@@ -472,7 +472,7 @@ void Utility::voxelDirSeen(int mode) {
 
 void Utility::voxelBfsSeen() {
 	std::set<int> last;
-	for (int i = 0; i < voxels.size(); i++)last.insert(i);
+	for (int i = 0; i < voxelsize; i++)last.insert(i);
 
 	while (voxelBfsSeenOnce(last, 4));
 	while (voxelBfsSeenOnce(last, 5));
@@ -569,7 +569,7 @@ bool Utility::voxelBfsSeenOnce(std::set<int> & last, int mode) {
 
 void Utility::voxelCollectSeen(int mode) {//group只用來記錄方向
 	Piece piece;
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		if (!voxels[i].exist && !voxels[i].immo && voxels[i].hash.getBit(mode)) {
 			piece.voxelsi.push_back(i);
 			voxels[i].exist = true;
@@ -590,7 +590,7 @@ void Utility::voxelCollectSeen(int mode) {//group只用來記錄方向
 
 void Utility::collectLast() {
 	Piece piece;
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		if (!voxels[i].exist && !voxels[i].immo) {
 			voxels[i].exist = true;
 			piece.voxelsi.push_back(i);
@@ -810,7 +810,8 @@ void Utility::genVoxel() {
 	nx = (ru.x - ld.x) / l + 1;
 	ny = (ru.y - ld.y) / l + 1;
 	nz = (ru.z - ld.z) / l + 1;
-	voxels = std::vector<Voxel>(nx*ny*nz);
+	//voxels = std::vector<Voxel>(nx*ny*nz);
+	voxels = new Voxel[voxelsize];
 	#pragma omp parallel for
 	for (int ix = 0; ix < nx; ix++) {
 		for (int iy = 0; iy < ny; iy++) {
@@ -840,7 +841,7 @@ void Utility::genVoxel() {
 	//test
 	/* 
 	pieces = std::vector<Piece>(topo.edgenum);
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		std::vector<bool> bits = voxels[i].hash.getBits();
 		for (int j = 0; j < bits.size(); j+=3) {
 			if (bits[j] && bits[j+2]) {
@@ -852,7 +853,7 @@ void Utility::genVoxel() {
 		}
 	}
 	for (int i = 0; i < pieces.size(); i++) {
-		std::cout << pieces[i].voxels.size() << std::endl;
+		std::cout << pieces[i].voxelsize << std::endl;
 	}
 	*/
 }
@@ -884,7 +885,7 @@ void Utility::genVoxelByKnife_autotune() {
 }
 
 void Utility::genSuperVoxelBlock() {
-	voxels = std::vector<Voxel>(nx*ny*nz);
+	//voxels = std::vector<Voxel>(nx*ny*nz);//calBound has do
 	//***************************************************************
 	tic();
 	std::vector<std::set<int>> tnear(ntx * nty * ntz);
@@ -1000,7 +1001,7 @@ void Utility::previewPiece_voxel(std::vector<Plane>& knifes) {
 	tic();
 	//*******************************************************************
 	#pragma omp parallel for
-	for (int idx = 0; idx<voxels.size(); idx++) {
+	for (int idx = 0; idx<voxelsize; idx++) {
 		int idxt = voxels[idx].it;
 		Vector3 pos = voxels[idx].pos;
 		for (auto i : tnear[idxt]) {
@@ -1052,13 +1053,15 @@ void Utility::previewPiece_voxel(std::vector<Plane>& knifes) {
 	tic();
 	#pragma omp parallel for
 	for (int p = 0; p < pieces.size(); p++) {
-		topo.calTouchBound(pieces[p]);
+		topo.calTouchBound(pieces[p], false);
+		if(pieces[p].boundids.size()==topo.avalist.size())
+			topo.calTouchBound(pieces[p], true);
 	}
 	if (printdebug) { printf("cal bound- "); toc(); }
 }
 
 float Utility::genVoxelByKnife() {
-	voxels = std::vector<Voxel>(nx*ny*nz);
+	//voxels = std::vector<Voxel>(nx*ny*nz);
 	//***************************************************************
 	tic();
 	std::vector<float> ratefrom(topo.knifes.size());
@@ -1144,32 +1147,34 @@ float Utility::genVoxelByKnife() {
 	}
 	if (printdebug) { printf("cal vox  - "); toc(); }
 	//*******************************************************************
-	tic();
-	#pragma omp parallel for
-	for (int ix = 0; ix < nx; ix++) {
-		for (int iy = 0; iy < ny; iy++) {
-			for (int iz = 0; iz < nz; iz++) {
-				Vector3 pos = ld + Vector3(l*ix, l*iy, l*iz);
-				int idx = ix * ny * nz + iy * nz + iz;
-				int itx = ix / stx, ity = iy / sty, itz = iz / stz;
-				int idxt = itx * nty * ntz + ity * ntz + itz;
-				std::vector<bool> bits = std::vector<bool>(topo.knifes.size());
-				for (auto edge : topo.edges) {
-					Vector3 v1 = topo.vertices[edge.ia];
-					Vector3 v2 = topo.vertices[edge.ib];
-					Vector3 vmax = Vector3(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z));
-					Vector3 vmin = Vector3(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z));
-					voxels[idx].hash4.addHash(pos.x - vmax.x < manh);
-					voxels[idx].hash4.addHash(pos.x - vmin.x > -manh);
-					voxels[idx].hash4.addHash(pos.y - vmax.y < manh);
-					voxels[idx].hash4.addHash(pos.y - vmin.y > -manh);
-					voxels[idx].hash4.addHash(pos.z - vmax.z < manh);
-					voxels[idx].hash4.addHash(pos.z - vmin.z > -manh);
+	if(manhmode){
+		tic();
+		#pragma omp parallel for
+		for (int ix = 0; ix < nx; ix++) {
+			for (int iy = 0; iy < ny; iy++) {
+				for (int iz = 0; iz < nz; iz++) {
+					Vector3 pos = ld + Vector3(l*ix, l*iy, l*iz);
+					int idx = ix * ny * nz + iy * nz + iz;
+					int itx = ix / stx, ity = iy / sty, itz = iz / stz;
+					int idxt = itx * nty * ntz + ity * ntz + itz;
+					std::vector<bool> bits = std::vector<bool>(topo.knifes.size());
+					for (auto edge : topo.edges) {
+						Vector3 v1 = topo.vertices[edge.ia];
+						Vector3 v2 = topo.vertices[edge.ib];
+						Vector3 vmax = Vector3(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z));
+						Vector3 vmin = Vector3(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z));
+						voxels[idx].hash4.addHash(pos.x - vmax.x < manh);
+						voxels[idx].hash4.addHash(pos.x - vmin.x > -manh);
+						voxels[idx].hash4.addHash(pos.y - vmax.y < manh);
+						voxels[idx].hash4.addHash(pos.y - vmin.y > -manh);
+						voxels[idx].hash4.addHash(pos.z - vmax.z < manh);
+						voxels[idx].hash4.addHash(pos.z - vmin.z > -manh);
+					}
 				}
 			}
 		}
+		if (printdebug) { printf("cal manh - "); toc(); }
 	}
-	if (printdebug) { printf("cal manh - "); toc(); }
 	//*******************************************************************
 	tic();
 	//cal grid touch
@@ -1192,40 +1197,42 @@ float Utility::genVoxelByKnife() {
 	}
 	//cal manhatan touch
 	std::map<Hash, std::vector<bool>> cubeCollideMap;
-	for (int ix = 0; ix < nx; ix++) for (int iy = 0; iy < ny; iy++) for (int iz = 0; iz < nz; iz++) {
-		Vector3 pos = ld + Vector3(l*ix, l*iy, l*iz);
-		int idx = ix * ny * nz + iy * nz + iz;
-		Hash hash4 = voxels[idx].hash4;
-		if (manhCubeMap.count(hash4) == 0) {
-			std::vector<bool> bits4 = hash4.getBits();
-			Vector3 _ld = ld;
-			Vector3 _ru = ru;
-			for (int k = 0; k < topo.edgenum; k++) {
-				TopoEdge edge = topo.edges[k];
-				Vector3 v1 = topo.vertices[edge.ia];
-				Vector3 v2 = topo.vertices[edge.ib];
-				Vector3 vmax = Vector3(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z)) + Vector3(manh, manh, manh);
-				Vector3 vmin = Vector3(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z)) - Vector3(manh, manh, manh);
-				if (bits4[k * 6 + 0])_ru.x = std::min(_ru.x, vmax.x);
-				else _ld.x = std::max(_ld.x, vmax.x);
-				if (bits4[k * 6 + 1])_ld.x = std::max(_ld.x, vmin.x);
-				else _ru.x = std::min(_ru.x, vmin.x);
-				if (bits4[k * 6 + 2])_ru.y = std::min(_ru.y, vmax.y);
-				else _ld.y = std::max(_ld.y, vmax.y);
-				if (bits4[k * 6 + 3])_ld.y = std::max(_ld.y, vmin.y);
-				else _ru.y = std::min(_ru.y, vmin.y);
-				if (bits4[k * 6 + 4])_ru.z = std::min(_ru.z, vmax.z);
-				else _ld.z = std::max(_ld.z, vmax.z);
-				if (bits4[k * 6 + 5])_ld.z = std::max(_ld.z, vmin.z);
-				else _ru.z = std::min(_ru.z, vmin.z);
+	if (manhmode) {
+		for (int ix = 0; ix < nx; ix++) for (int iy = 0; iy < ny; iy++) for (int iz = 0; iz < nz; iz++) {
+			Vector3 pos = ld + Vector3(l*ix, l*iy, l*iz);
+			int idx = ix * ny * nz + iy * nz + iz;
+			Hash hash4 = voxels[idx].hash4;
+			if (manhCubeMap.count(hash4) == 0) {
+				std::vector<bool> bits4 = hash4.getBits();
+				Vector3 _ld = ld;
+				Vector3 _ru = ru;
+				for (int k = 0; k < topo.edgenum; k++) {
+					TopoEdge edge = topo.edges[k];
+					Vector3 v1 = topo.vertices[edge.ia];
+					Vector3 v2 = topo.vertices[edge.ib];
+					Vector3 vmax = Vector3(std::max(v1.x, v2.x), std::max(v1.y, v2.y), std::max(v1.z, v2.z)) + Vector3(manh, manh, manh);
+					Vector3 vmin = Vector3(std::min(v1.x, v2.x), std::min(v1.y, v2.y), std::min(v1.z, v2.z)) - Vector3(manh, manh, manh);
+					if (bits4[k * 6 + 0])_ru.x = std::min(_ru.x, vmax.x);
+					else _ld.x = std::max(_ld.x, vmax.x);
+					if (bits4[k * 6 + 1])_ld.x = std::max(_ld.x, vmin.x);
+					else _ru.x = std::min(_ru.x, vmin.x);
+					if (bits4[k * 6 + 2])_ru.y = std::min(_ru.y, vmax.y);
+					else _ld.y = std::max(_ld.y, vmax.y);
+					if (bits4[k * 6 + 3])_ld.y = std::max(_ld.y, vmin.y);
+					else _ru.y = std::min(_ru.y, vmin.y);
+					if (bits4[k * 6 + 4])_ru.z = std::min(_ru.z, vmax.z);
+					else _ld.z = std::max(_ld.z, vmax.z);
+					if (bits4[k * 6 + 5])_ld.z = std::max(_ld.z, vmin.z);
+					else _ru.z = std::min(_ru.z, vmin.z);
+				}
+				Cube manhcube = Cube(_ld, _ru);
+				manhCubeMap[hash4] = manhcube;
+				std::vector<bool> cols;
+				for (auto cap : topo.caps) {
+					cols.push_back(cap.collide(manhcube.cent, manhcube.size.length() / 2));
+				}
+				cubeCollideMap[hash4] = cols;
 			}
-			Cube manhcube = Cube(_ld, _ru);
-			manhCubeMap[hash4] = manhcube;
-			std::vector<bool> cols;
-			for (auto cap : topo.caps) {
-				cols.push_back(cap.collide(manhcube.cent, manhcube.size.length() / 2));
-			}
-			cubeCollideMap[hash4] = cols;
 		}
 	}
 	//mod hash
@@ -1285,7 +1292,7 @@ float Utility::genVoxelByKnife() {
 
 void Utility::genPiece_voxel_bfs() {
 	std::set<int> voxels_set;
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		if(voxels[i].dis>0)if(!nearmode || voxels[i].tag.tlev == 0)voxels_set.insert(i);
 	}
 	while (true) {
@@ -1355,7 +1362,9 @@ void Utility::genPiece_voxel_bfs() {
 			piece.touchinfos.push_back(ti);
 		}
 		piece.id = pn;
-		topo.calTouchBound(piece);
+		topo.calTouchBound(piece, false);
+		if (piece.boundids.size() == topo.avalist.size())
+			topo.calTouchBound(piece, true);
 		piece.it = voxels[piece.voxelsi[0]].it;
 		pieces.push_back(piece);
 		supervoxels[piece.it].push_back(pn);
@@ -1415,7 +1424,9 @@ void Utility::genPiece_voxel() {
 	tic();
 	#pragma omp parallel for
 	for (int p = 0; p < pieces.size(); p++) {
-		topo.calTouchBound(pieces[p]);
+		topo.calTouchBound(pieces[p], false);
+		if (pieces[p].boundids.size() == topo.avalist.size())
+			topo.calTouchBound(pieces[p], true);
 	}
 	if (printdebug) { printf("cal bound- "); toc(); }
 	//************************************************************************************
@@ -1435,9 +1446,9 @@ void Utility::genPiece_voxel() {
 	/*
 	int mapcnt = 0;
 	std::map<Tag, int> tagmap;
-	for (int i = 0; i < voxels.size(); i++) if (tagmap.count(voxels[i].tag) == 0)tagmap[voxels[i].tag] = mapcnt++;
+	for (int i = 0; i < voxelsize; i++) if (tagmap.count(voxels[i].tag) == 0)tagmap[voxels[i].tag] = mapcnt++;
 	pieces = std::vector<Piece>(tagmap.size());
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		int h = tagmap[voxels[i].tag];
 		pieces[h].voxelsi.push_back(i);
 		pieces[h].volume++;
@@ -1474,7 +1485,7 @@ void Utility::genPiece_voxel() {
 	//************************************************************************************
 	/* old version
 	std::map<Hash, Piece> hashMap;
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		int ix = i / (ny * nz);
 		int iy = i / nz % ny;
 		int iz = i % nz;
@@ -1546,8 +1557,10 @@ void Utility::initGroup() {//assume piece.id == group.id
 	groupIdxMap = std::vector<int>(groups.size());
 	idexist = std::vector<bool>(groups.size(), true);
 	groupidcnt = pieces.size();
+	int toremovenum = 0;
 	//#pragma omp parallel for
 	for (int i = 0; i < pieces.size(); i++) {
+		if (i % 100 == 0)printf("%d / %d\n", i, pieces.size());
 		//groups[i] = group; //"no more initava"
 		groups[i].avaset = group.avaset;
 		//topo.calTouch(pieces[i]);
@@ -1573,10 +1586,14 @@ void Utility::initGroup() {//assume piece.id == group.id
 			}
 			idexist[groups[tar].id] = false;
 			groups[tar].removed = true;
+			if (!checkThin(tar)) {
+				removeGroup(tar);
+				toremovenum++;
+			}
 		}
 		//****************************
 	}
-	if (printdebug)printf("InitGroup %d\n", groups.size());
+	if (printdebug)printf("InitGroup %d, Too Thin : %d \n", groups.size(), toremovenum);
 }
 
 void Utility::initGroupBorde(Group &group) {
@@ -1682,7 +1699,7 @@ void Utility::initLink() {
 void Utility::initLink_voxel() {//assume group.id = piece.id
 	tic();
 	//#pragma omp parallel for
-	for (int i = 0; i < voxels.size(); i++) {
+	for (int i = 0; i < voxelsize; i++) {
 		int ix = i / (ny * nz);
 		int iy = i / nz % ny;
 		int iz = i % nz;
@@ -1910,6 +1927,54 @@ void Utility::checkCav(Group& group) {
 	if (!quickcheckcav) {
 
 	} else{
+		for (int itxy = 0; itxy < ntx*nty; itxy++) {
+			int upnum = 0;
+			int downnum = 0;
+			for (auto itzmap : group.ztmap[itxy]) {
+				int it = itxy * ntz + itzmap.first;
+				if (itzmap.first + 1 >= ntz)upnum++;
+				else if (itzmap.first - 1 < 0)downnum++;
+				else {
+					int lim = 50;
+					for (auto p : group.supervoxels[it]) {
+						int it_ = itxy * ntz + itzmap.first + 1;
+						bool isnei = false;
+						if (group.supervoxels.count(it_) > 0) {
+							for (auto p_ : group.supervoxels[it_]) {
+								if (pieces[p].neighbor.count(p_) > 0) {
+									int cn = 0;
+									for (auto n : pieces[p].contactmap[p_]) {
+										cn += n;
+									}
+									if(cn>lim)isnei = true;
+								}
+							}
+						}
+						if (!isnei)upnum++;
+						it_ = itxy * ntz + itzmap.first - 1;
+						isnei = false;
+						if (group.supervoxels.count(it_) > 0) {
+							for (auto p_ : group.supervoxels[it_]) {
+								if (pieces[p].neighbor.count(p_) > 0) {
+									int cn = 0;
+									for (auto n : pieces[p].contactmap[p_]) {
+										cn += n;
+									}
+									if (cn>lim)isnei = true;
+								}
+							}
+						}
+						if (!isnei)downnum++;
+					}
+				}
+			}				
+			if (downnum > 1 || upnum > 1) {
+				group.zcav = true;
+				return;
+			}
+		}
+		return;//force try above
+		//*******************************
 		for(auto set : group.ztmap){
 			if (set.size() <= 1)continue;
 			std::vector<int> exist(ntz, 0);
@@ -2010,6 +2075,10 @@ void Utility::checkCav(Group& group, Piece& piece) {
 		int itxy = itx * nty + ity;
 		if (group.ztmap[itxy].count(itz) == 0)group.ztmap[itxy][itz] = 0;
 		group.ztmap[itxy][itz]+=piece.volume;
+		//***************************************
+		int it = voxels[piece.voxelsi[0]].it;
+		if (group.supervoxels.count(it) == 0)group.supervoxels[it] = std::set<int>();
+		group.supervoxels[it].insert(piece.id);
 	}
 	
 }
@@ -2096,8 +2165,11 @@ void Utility::calBound() {
 		ld -= tune / 2;
 	}
 	//********************************
-	voxels = std::vector<Voxel>(nx*ny*nz);
+	//voxels = std::vector<Voxel>(nx*ny*nz);
+	voxelsize = nx*ny*nz;
+	voxels = new Voxel[voxelsize];
 	tnear = std::vector<std::vector<int>>(ntx * nty * ntz);
+	printf("%d voxels", nx*ny*nz);
 	//********************************
 	topo.maxcol = std::max(nx, std::max(ny, nz));
 	if (printdebug) {
@@ -2105,7 +2177,7 @@ void Utility::calBound() {
 		std::cout << ru << std::endl;
 	}
 	//********************************
-	if (manhmode) {
+	if (manhmode || nogrid) {
 		ntx = 1;
 		nty = 1;
 		ntz = 1;
@@ -2113,6 +2185,32 @@ void Utility::calBound() {
 		sty = ny;
 		stz = nz;
 	}	
+	//********************************
+	std::vector<bool> isexist(topo.edgenum, false);
+	for (int i = 0; i < topo.edgenum; i++) {
+		Vector3 v1 = topo.vertices[topo.edges[i].ia];
+		Vector3 v2 = topo.vertices[topo.edges[i].ib];
+		if ((v1.z > ld.z && v1.z<ru.z) || (v2.z>ld.z && v2.z < ru.z)) {
+			isexist[i] = true;
+		}
+	}
+	std::vector<TopoEdge> edges;
+	std::vector<Vector3> splitNorm;
+	for (int i = 0; i < topo.edgenum; i++) {
+		if (isexist[i]) {
+			edges.push_back(topo.edges[i]);
+			splitNorm.push_back(topo.splitNorm[i]);
+		}
+	}
+	topo.edges = edges;
+	topo.splitNorm = splitNorm;
+	topo.splitNorm_ori = splitNorm;
+	topo.edgenum = edges.size();
+	topo.prepareData();
+	topo.fixAngleDistance();
+	topo.genAllKnife();
+	topo.genCapsule();
+	//********************************
 }
 
 void Utility::optimize() {
@@ -2136,8 +2234,30 @@ void Utility::optimize() {
 	}
 }
 
+bool Utility::checkThin(int tar) {
+	int minx = INT_MAX;
+	int miny = INT_MAX;
+	int minz = INT_MAX;
+	int maxx = INT_MIN;
+	int maxy = INT_MIN;
+	int maxz = INT_MIN;
+	for (auto p : groups[tar].pieces) {
+		for (auto v : pieces[p].voxelsi) {
+			minx = std::min(voxels[v].ix, minx);
+			miny = std::min(voxels[v].iy, miny);
+			minz = std::min(voxels[v].iz, minz);
+			maxx = std::max(voxels[v].ix, maxx);
+			maxy = std::max(voxels[v].iy, maxy);
+			maxz = std::max(voxels[v].iz, maxz);
+		}
+	}
+	int mindif = std::min(maxx - minx, std::min(maxy - miny, maxz - minz));
+	if (mindif < 3) { printf("Detect thin : %d - %d\n", tar, mindif); return false; }
+	return true;
+}
+
 void Utility::removeGroup(int tar) {
-	if(printdebug)std::cout << "---------- Remove " << tar << std::endl;
+	//if(printdebug)std::cout << "---------- Remove " << tar << std::endl;
 	//************
 	for (int i = 0; i < groups[tar].pieces.size(); i++) {
 		for (int j = 0; j < pieces[groups[tar].pieces[i]].voxelsi.size(); j++) {
@@ -2193,8 +2313,9 @@ void Utility::iterate() {
 			topo.applyColdis(groups[tar], coldis);
 		}
 		//*******************
+		if (printdebug)std::cout << "---------- Order Remove " << tar << ", volume : " << maxmyworth.val[1] << std::endl;
 		removeGroup(tar);
-		if (groups[tar].volume > contlim) {
+		if (groups[tar].volume > volumelim && checkThin(tar)) {
 			groups_final.push_back(tar);
 			finalgroupset.insert(tar);
 			purneAvaByNei(tar);
@@ -2275,7 +2396,7 @@ void Utility::recalAssem() {
 			}
 		}
 		if (mini == -1) break;
-		if (printdebug)std::cout << "---------- Assem " << mini << " zup : " << worth.val[0] << " zdo : " << worth.val[1] << std::endl;
+		if (printdebug)std::cout << "---------- Assem " << mini << " zup : " << worth.val[0] << " zdo : " << worth.val[1] << " vol : " << groups[mini].volume << std::endl;
 		for (int i = 0; i < groups[mini].pieces.size(); i++) {
 			for (int j = 0; j < pieces[groups[mini].pieces[i]].voxelsi.size(); j++) {
 				int idx = pieces[groups[mini].pieces[i]].voxelsi[j];
@@ -2317,18 +2438,37 @@ void Utility::noopt() {
 		//*******************
 		removeGroup(maxi);
 		//*******************
-		if (groups[maxi].volume > contlim) {
+		if (groups[maxi].volume > volumelim && checkThin(maxi)) {
 			groups_final.push_back(maxi);
 			finalgroupset.insert(maxi);
 			purneAvaByNei(maxi);
 		}
 		if (groups[maxi].volume < 50) {
-			if (printdebug)printf("%d\n", groups[maxi].volume);
+			//if (printdebug)printf("small : %d\n", groups[maxi].volume);
 		}
 
 		//std::cout << "           Ava    " << groups[maxi].avanum << std::endl;std::endl;
 	}
 	//*********************************************************************
+	
+	if (nofinalmerge) {
+		int nonemovablenum = 0;
+		for (int k = 0; k < groups.size(); k++) {
+			if (!idexist[groups[k].id])continue;
+			if (groups[k].removed)continue;
+			if (groups[k].volume < volumelim || !checkThin(k)) {
+				removeGroup(k);
+				continue;
+			}
+			if (printdebug)std::cout << "---------- Final Remove " << k << ", volume : " << groups[k].volume << std::endl;
+			groups_final.push_back(k);
+			finalgroupset.insert(k);
+			removeGroup(k);
+			nonemovablenum++;
+		}
+		printf("NonRemovableNum : %d", nonemovablenum);
+		return;
+	}
 	Group group;
 	std::vector<int> grouplistidx;
 	group.initAva();
@@ -3129,7 +3269,8 @@ void Utility::outputKnife() {
 }
 
 void Utility::outputZip() {
-	float fix = 1.0f;//????????????????????????????????????
+	//float fix = 1.0f;//????????????????????????????????????
+	float fix = outputfix;
 	std::vector<std::vector<int>> pieceingrid(ntx*nty*ntz);
 	for (int i = 0; i < pieces.size(); i++) {
 		if (pieces[i].volume == stx*sty*stz)pieces[i].iscube = true;
@@ -3218,6 +3359,7 @@ void Utility::outputZip() {
 			std::vector<bool> bits2 = voxels[piece.voxelsi[0]].hash2.getBits();
 			for (int k = 0; k < topo.edgenum; k++) {
 				if (bits2[k]) {
+				//if (bits2[k] && topo.knifeExist[k]) {
 					bool valid = true;
 					for (int m = 0; m < group.pieces.size(); m++) {
 						if (j == m)continue;

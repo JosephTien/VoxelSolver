@@ -32,7 +32,9 @@ public:
 	CGALNef cgalnef;
 	IglMachine iglMachine;
 	Topo topo;
-	std::vector<Voxel> voxels;
+	//std::vector<Voxel> voxels;
+	Voxel * voxels;
+	int voxelsize=0;
 	std::vector<std::vector<int>> tnear;
 	std::vector<std::vector<bool>> tbits2;
 	std::vector<std::vector<int>> supervoxels;//
@@ -58,16 +60,23 @@ public:
 	int levlim = 3;
 	int colthre = 10;
 	int contlim = 10;
+	int volumelim = 50;
+	float outputfix = 0;
 	bool tagmode = false;
 	bool nearmode = false;
 	bool manhmode = false;
 	bool clearmode = false;
-	bool checkcavmode = true;//似乎有一些問題，顯示voxel看看?
-	bool quickcheckcav = true;
+	/**/bool checkcavmode = true;//似乎有一些問題，顯示voxel看看?
+	bool quickcheckcav = false;
 	bool colmode = true;
 	bool eachcolmode = false;
-	bool printdebug = true;
-	bool printdebug_l2 = false;
+	/**/bool printdebug = true;
+	/**/bool printdebug_l2 = true;
+	//****************************
+	/*special mode usage*/
+	bool nofinalmerge = false;
+	bool nogrid = false;
+	/*special mode usage*/
 	
 	std::map<Hash, Cube> manhCubeMap;
 	float manh = topo.radii + topo.radii;
@@ -84,7 +93,8 @@ public:
 	}
 	//*************************
 	void initVar() {
-		voxels = std::vector<Voxel>();
+		//voxels = std::vector<Voxel>();
+		voxels = new Voxel[1];
 		supervoxels = std::vector<std::vector<int>>();
 		supervoxeltouch = std::vector<bool>();
 		supervoxelblock = std::vector<std::vector<int>>();
@@ -132,6 +142,7 @@ public:
 	std::vector<int> calContact(Group & group);
 	std::vector<int> calBothContact(Group & group1, Group & group2, std::vector<std::set<int>> & contactgroup);
 	void optimize();
+	bool checkThin(int tar);
 	void removeGroup(int tar);
 	void iterate();
 	void recalAssem();

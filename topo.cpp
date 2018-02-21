@@ -64,6 +64,72 @@ void Topo::read() {
 	//*********************
 }
 
+void Topo::analysis() {
+	Vector3 min(FLT_MAX, FLT_MAX, FLT_MAX);
+	Vector3 max(FLT_MIN, FLT_MIN, FLT_MIN);
+	for (int i = 0; i < verticenum; i++) {
+		min.x = std::min(min.x, vertices[i].x);
+		min.y = std::min(min.y, vertices[i].y);
+		min.z = std::min(min.z, vertices[i].z);
+		max.x = std::max(max.x, vertices[i].x);
+		max.y = std::max(max.y, vertices[i].y);
+		max.z = std::max(max.z, vertices[i].z);
+	}
+	Vector3 dif = max - min;
+	float nodedense = verticenum / (dif.x*dif.y*dif.z) * 10000;
+	std::cout << verticenum << " " << dif << std::endl;
+	//****************************
+	float edgelen= 0;
+	for (int i = 0; i < edgenum; i++) {
+		edgelen += getEdgeVec_(i).length();
+	}
+	edgelen /= edgenum;
+	//****************************
+	float anglesum = 0;
+	int paircnt = 0;
+	for (int i = 0; i < verticenum; i++) {//smooth»Plock
+		for (auto j : verticeedge[i]) {
+			for (auto k : verticeedge[i]) {
+				if (j >= k)continue;
+				Vector3 veca = getEdgeVec(j);
+				Vector3 vecb = getEdgeVec(k);
+				float dot = veca.dot(vecb);
+				if (dot < 0)dot *= -1;
+				anglesum += acos(dot) / M_PI * 180.0f;
+				paircnt++;
+			}
+		}
+	}
+	anglesum /= paircnt;
+	//****************************
+	float isimporate = 0;
+	for (int i = 0; i < verticenum; i++) {
+		if (isimpo[i])isimporate++;
+	}
+	isimporate /= verticenum;
+	//****************************
+	edgeneimap = std::vector<std::vector<bool>>(edgenum, std::vector<bool>(edgenum, false));
+	for (int i = 0; i < verticenum; i++) {//smooth»Plock
+		float curval = 0;
+		for (auto j : verticeedge[i]) {
+			for (auto k : verticeedge[i]) {
+				edgeneimap[j][k] = edgeneimap[k][j] = true;
+			}
+		}
+	}
+	float minDis = FLT_MAX;
+	for (int i = 0; i < edgenum; i++) {
+		for (int j = i+1; j < edgenum; j++) {
+			Vector3 centa = getEdgeCent(i);
+			Vector3 centb = getEdgeCent(j);
+			if(!edgeneimap[i][j])minDis = std::min(minDis, (centa-centb).length());
+		}
+	}
+	minDis;
+	//****************************
+	printf("%f, %f, %f, %f, %f\n", nodedense, edgelen, anglesum, isimporate, minDis);
+}
+
 void Topo::regenSplitNorm() {
 	for (int i = 0; i < edgenum; i++) {
 		Vector3 vec = (vertices[edges[i].ib] - vertices[edges[i].ia]).normalize();
@@ -117,9 +183,30 @@ void Topo::genKnife() {
 void Topo::genAllKnife() {
 	knifes = std::vector<Plane>();
 	knifeIdx = std::vector<int>();
+	Vector3 samp[6] = { Vector3(-1,0,0) ,Vector3(1,0,0), Vector3(0,-1,0), Vector3(0,1,0), Vector3(0,0,-1),Vector3(0,0,1) };
 	for (int i = 0; i < edgenum; i++) {
-		knifes.push_back(Plane(splitNorm[i], getEdgeCent(i)));
+		for(int j=0;j<6;j++)if (splitNorm[i].dot(samp[j]) > 0.95f)splitNorm[i] = samp[j];
+		knifes.push_back(Plane(splitNorm[i].normalize(), getEdgeCent(i)));
 		knifeIdx.push_back(i);
+	}
+	knifeExist = std::vector<bool>(edgenum, true);
+	if (simpKnifeMode) {
+		for (int i = 0; i < edgenum; i++) {
+			if (!knifeExist[i])continue;
+			for (int j = i+1; j < edgenum; j++) {
+				if (std::abs(knifes[i].normal.dot(knifes[j].normal)) > 0.9) {
+					if (std::abs((knifes[i].center- knifes[j].center).dot(knifes[i].normal))<5) {
+						knifeExist[j] = false;
+						knifes[j] = knifes[i];
+					}
+				}
+			}
+		}
+		int knifenum = 0;
+		for (int i = 0; i < edgenum; i++) {
+			if (knifeExist[i])knifenum++;
+		}
+		printf("Simp knike : %d/%d\n", knifenum, edgenum);
 	}
 }
 
@@ -225,7 +312,7 @@ void Topo::calTouch(Piece & piece) {
 	}
 }
 
-void Topo::calTouchBound(Piece & piece) {
+void Topo::calTouchBound(Piece & piece, bool flexMode) {
 	/*
 	for (auto ti : piece.touchinfos) {
 		TopoEdge edge = edges[ti.e];
@@ -288,6 +375,8 @@ void Topo::calTouchBound(Piece & piece) {
 	//for (float x = 0.1; x < 360; x += plus) for (float y = 0.1; y < 360; y += plus) for (float z = 0.1; z < 360; z += plus) {
 	//	Matrix4 mat; mat.rotateX(x); mat.rotateY(y); mat.rotateZ(z);
 	//	Vector3 to = mat*Vector3(1, 0, 0);
+	piece.boundids.clear();
+	if (flexMode)sidethre = 0;
 	for(auto to : avalist){
 		to += getRandomVec();
 		bool valid = false;
@@ -297,8 +386,13 @@ void Topo::calTouchBound(Piece & piece) {
 			TopoEdge edge = edges[ti.e];
 			Vector3 vec = (vertices[edge.ib] - vertices[edge.ia]).normalize();
 			if (std::abs(vec.dot(to)) > cos(5.0f / 180.0f * M_PI)) {
-				valid = true;
-				break;
+				if (!flexMode) {
+					valid = true;
+					break;
+				}
+				else{
+					continue;
+				}
 			}
 			Vector3 norm = ti.dir.normalize();
 			Vector3 per = vec.cross(to).cross(vec).normalize();
@@ -521,7 +615,7 @@ float Topo::calAngleArgVal(std::vector<float> angles) {
 		}
 		//************************************
 		//printf("%f %f %f %f %f\n", val[0], val[1], val[2], val[3], val[4]);
-		return val[0] + val[1] * 100;// +val[2] * 10000 + val[3] * 1000;
+		return val[0] + val[1] * 100 + val[2] * 10000;// + val[3] * 1000;
 	} else if(optMode==1){//max coplane
 		std::vector<Vector3> splitNorm_;
 		for (int i = 0; i < edgenum; i++) {
